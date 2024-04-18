@@ -1,0 +1,5 @@
+requests
+pdf2image  
+invoice2data  
+click  
+pyfiglet

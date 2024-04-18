@@ -1,0 +1,34 @@
+issuer: Tesla
+keywords:
+- Tesla
+
+fields:
+  date:
+    parser: regex
+    regex:
+      - (\d{4}\/\d{2}\/\d{2})
+    type: date
+  amount:
+    parser: regex
+    regex:
+      - Totaal \(EUR\)\s+([\d,.]+)
+    type: float
+  charged:
+    parser: regex
+    regex:
+    - (\d+) kWh
+    type: float
+  invoice_number:
+    parser: regex
+    regex:
+      - \d{4}[A-Z]\d{10}
+options:
+  decimal_separator: '.'
+  remove_whitespace: False
+  date_formats:
+    - '%Y/%m/%d'
+  required:
+    - amount
+    - charged
+    - currency
+    - country
