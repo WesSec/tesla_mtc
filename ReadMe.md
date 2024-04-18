@@ -47,3 +47,5 @@ The cookies for this application are valid for 365 days, reversing and programmi
   - Also copy the value of `X-CSRFToken`
   - In main.py replace the `<SEE INSTRUCTIONS ABOVE>` with your values
 - Voila, you should be good for another 365 days
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/wessec)
