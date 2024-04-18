@@ -34,7 +34,7 @@ Run `python3 main.py <filename.zip>`
 The cookies for this application are valid for 365 days, reversing and programming the login sequence was too much off a hassle, so you'll have to obtain the cookies yourself. 
 
 - Open a browser (instructions are for edge, but chrome is very the same)
-- Visit https://mtc.outsystemsenterprise.com/
+- Visit https://mtc.outsystemsenterprise.com/MultiTankcard/
 - Press F12
 - Open network tab
 - Enable Preserve log

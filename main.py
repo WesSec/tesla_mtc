@@ -12,7 +12,7 @@ import click
 from pyfiglet import Figlet
 
 # YOU MUST FILL IN THESE VARIABLES FOR THE SCRIPT TO WORK!!!
-# GO TO https://mtc.outsystemsenterprise.com/ in a browser. log in, using F12 > Network tab (Make sure you disable cache!!)
+# GO TO https://mtc.outsystemsenterprise.com/MultiTankcard/ in a browser. log in, using F12 > Network tab (Make sure you disable cache!!)
 # Get from the request headers the following cookie values:
 # - osVisit
 # - osVisitor
