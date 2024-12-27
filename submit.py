@@ -17,7 +17,7 @@ submit_json = {
             "DateTransaction": "",
             "Mileage": "0",
             "IsForeign": False,
-            "CountryId": "",
+            "CountryId": "NL",
             "IsReplacement": False,
             "Quantity": "",
             "Description": "",

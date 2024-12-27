@@ -4,7 +4,7 @@ login.py
 mainual.py
 test.zip
 tmp.py
-
+.env
 // User files
 submitted/*
 extracted_pdfs/*
@@ -242,3 +242,12 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,windows,venv
+MTC2.py
+MTC_selenium.py
+test.py
+testphoto.jpeg
+.vscode/launch.json
+.vscode/launch.json
+*.log
+__pycache__/
+*.pyc
