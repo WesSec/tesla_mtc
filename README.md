@@ -52,7 +52,7 @@ Never commit your `.env` file or share your:
 
 ## Getting Your Tesla Refresh Token
 
-[Add instructions for obtaining Tesla refresh token]
+https://tesla-info.com/tesla-token.php
 
 ## Features
 
@@ -61,11 +61,9 @@ Never commit your `.env` file or share your:
 
 ## Error Handling
 
-The system includes comprehensive error handling:
+The system includes error handling:
 - Checks for API-level errors in responses
-- Validates all submissions before processing
-- Maintains detailed logs of operations
-- Handles session timeouts and reconnections
+- Validates submissions before processing
 
 ## Limitations
 
