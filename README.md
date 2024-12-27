@@ -40,9 +40,10 @@ Never commit your `.env` file or share your:
 - `IBAN`: Your bank account number for reimbursement payouts
 - `MTC_USERNAME`: MTC platform username
 - `MTC_PASSWORD`: MTC platform password
+- `MODE`: Set to 'DRY' for testing (no actual submissions, anything !DRY will actually submit)
 
 ### Optional Settings
-- `MODE`: Set to 'DRY' for testing (no actual submissions)
+
 - `LOG_LEVEL`: App logging level (default: INFO)
 - `MAX_SESSIONS`: Number of recent charging sessions to process (default: 1)
 - `DEVICE_COUNTRY`: Country code (default: NL)
