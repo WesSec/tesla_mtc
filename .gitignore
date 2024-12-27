@@ -251,3 +251,4 @@ testphoto.jpeg
 *.log
 __pycache__/
 *.pyc
+submit.py
