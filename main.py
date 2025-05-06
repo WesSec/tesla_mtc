@@ -373,7 +373,7 @@ def main():
         
         # Process each session
         for session in sessions:
-            logging.info(f"Processing session: {session['location']} on {session['datetime']}")
+            logging.info(f"Processing session: {session['location']} on {session['datetime']}, session ID: {session['chargeSessionId']}")
             logging.info(f"Details: {session['kwh_charged']} kWh, €{session['total_price']}")
             
             if not session.get('invoice_jpeg_base64'):
