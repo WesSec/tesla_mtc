@@ -360,6 +360,7 @@ def main():
     )
     
     try:
+        logging.info("Starting Tesla charging session processing")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()
         
@@ -367,9 +368,11 @@ def main():
             logging.warning("No charging sessions found to process")
             return
 
+        logging.info(f"Found {len(sessions)} charging sessions to process")
+        
         mtc_client = MTCClient()
         
-        logging.info(f"Found {len(sessions)} charging sessions to process")
+        
         
         # Process each session
         for session in sessions:
@@ -380,9 +383,9 @@ def main():
                 logging.warning(f"No invoice available for session at {session['location']}, skipping")
                 continue
             
-            success = mtc_client.submit_reimbursement(session)
+            success, message = mtc_client.submit_reimbursement(session)
             if not success:
-                logging.warning(f"Failed to process session at {session['location']}")
+                logging.warning(f"Failed to process session at {session['location']}, {message}")
         
     except Exception as e:
         logging.error(f"Process failed: {str(e)}")
