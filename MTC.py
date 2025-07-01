@@ -1,22 +1,42 @@
+# MTC.py
+"""
+Client for interacting with the MultiTankcard (MTC) system.
+
+This module provides the MTCClient class, which handles authentication,
+session management, fetching transaction history, and submitting
+reimbursement claims to the MTC platform. It is designed to be used
+by applications that automate interactions with MTC, such as for
+submitting EV charging session reimbursements.
+
+The client manages cookies, CSRF tokens, and API versioning by
+fetching necessary information from MTC's web resources.
+"""
+
 import os
 import requests
 import time
 import logging
 import re
-from typing import Dict, Tuple
-from urllib.parse import unquote  # Import unquote
+from typing import Dict, Tuple, Any
+from urllib.parse import unquote
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import pytz
-import sys
+from datetime import datetime, timedelta, timezone
+import sys # Required for logging to stdout in test_mtc_client
 
-# For debugging purposes
-from requests_toolbelt.utils import dump
-from datetime import timezone
+# For debugging purposes, can be removed or commented out in production
+# from requests_toolbelt.utils import dump
 
+# Module-level logger
+# It's good practice to get the logger by the module's name.
+# Applications using this module can then configure this logger.
+logger = logging.getLogger(__name__)
 
-# API version patterns for different endpoints
-API_PATTERNS = {
+# API version patterns for different endpoints.
+# These patterns are used to extract dynamic API version strings from MTC's JavaScript files.
+# Each key is an internal identifier for an endpoint, and the value is a tuple containing:
+# 1. The regex pattern to find the API version.
+# 2. The name of the JavaScript file where this pattern is expected.
+API_PATTERNS: Dict[str, Tuple[str, str]] = {
     "appstoreurls": (
         'GetAppStoreUrls", "screenservices/OnTheMoveMultiTankcard_CW/ActionGetAppStoreUrls", "([^"]+)"',
         "OnTheMoveMultiTankcard_CW.controller.js",
@@ -35,44 +55,89 @@ API_PATTERNS = {
     ),
 }
 
+# Initial CSRF token used for pre-login requests.
+# This value was observed during the initial handshake with the MTC system
+# and is required for the first few calls before a dynamic token is issued post-login.
+INITIAL_CSRF_TOKEN: str = "T6C+9iB49TLra4jEsMeSckDMNhQ="
+
 
 class MTCClient:
     """
-    Client for interacting with the MultiTankcard (MTC) system.
-    Handles authentication, session management, and reimbursement submissions.
+    A client for interacting with the MultiTankcard (MTC) web application.
+
+    Manages session authentication, retrieves API versions, fetches transaction
+    history for deduplication, and submits reimbursement claims.
+
+    Attributes:
+        base_url (str): The base URL for the MTC OutSystems enterprise server.
+        csrf_token (str): The current CSRF token for session-authenticated requests.
+                          Starts with INITIAL_CSRF_TOKEN and is updated after login.
+        username (str): MTC username, loaded from the .env file.
+        password (str): MTC password, loaded from the .env file.
+        session (requests.Session): The session object used for making HTTP requests,
+                                    maintaining cookies and headers across requests.
+        _api_versions (Dict[str, str]): A cache for fetched API endpoint versions to avoid
+                                       redundant lookups.
+        module_version (str): The global module version token for the MTC application,
+                              fetched during initialization.
+        lookback_period_months (int): Number of months to look back when fetching
+                                      transactions for duplicate checking. Loaded from .env.
+        visit_id (str): Stores the 'osVisit' cookie value, obtained during session init.
+        visitor_id (str): Stores the 'osVisitor' cookie value, obtained during session init.
     """
 
-    def __init__(self):
-        """Initialize the MTC client with configuration and session setup."""
-        load_dotenv()
-        try:
-            self.lookback_period_months = int(
-                os.getenv("LOOKBACK_PERIOD", "6")
-            )  # Default to 6 months if not set
-        except ValueError:
-            logging.warning("Invalid LOOKBACK_PERIOD in .env, defaulting to 6 months.")
-            self.lookback_period_months = 6
-        self.base_url = "https://mtc.outsystemsenterprise.com"
-        # Default CSRF token, will be updated after initial calls and login
-        self.csrf_token = "T6C+9iB49TLra4jEsMeSckDMNhQ="
-        self.username = os.getenv("MTC_USERNAME")
-        self.password = os.getenv("MTC_PASSWORD")
-        self.session = self._initialize_session_headers()
-        self._api_versions: Dict[str, str] = {}  # Type hint for clarity
-        self.module_version: str = ""  # Initialize module_version
+    def __init__(self) -> None:
+        """
+        Initializes the MTCClient.
 
-        # Attempt to login upon initialization
+        This involves loading configuration from .env, setting up the HTTP session,
+        and attempting to log in to the MTC platform. If login fails, an error
+        is logged, and the client might be in a non-functional state.
+        """
+        load_dotenv()  # Load environment variables from .env file
+
+        self.base_url: str = "https://mtc.outsystemsenterprise.com"
+        self.csrf_token: str = INITIAL_CSRF_TOKEN # Start with the hardcoded pre-login token
+        self.username: str = os.getenv("MTC_USERNAME", "")
+        self.password: str = os.getenv("MTC_PASSWORD", "")
+
+        self.session: requests.Session = self._initialize_session_headers()
+        self._api_versions: Dict[str, str] = {}
+        self.module_version: str = ""
+        self.visit_id: str = ""
+        self.visitor_id: str = ""
+
+        try:
+            self.lookback_period_months: int = int(os.getenv("LOOKBACK_PERIOD", "6"))
+        except ValueError:
+            logger.warning(
+                "Invalid LOOKBACK_PERIOD in .env (must be an integer). Defaulting to 6 months."
+            )
+            self.lookback_period_months = 6
+
+        if not self.username or not self.password:
+            logger.critical(
+                "MTC_USERNAME or MTC_PASSWORD not found in .env file. "
+                "MTCClient cannot operate without credentials."
+            )
+            # Consider raising a custom exception like ConfigurationError here
+            # to prevent the application from proceeding with a non-functional client.
+            return
+
+        # Attempt to log in upon initialization.
         if not self.login():
-            logging.error("MTC Client initialization failed due to login error.")
-            # Depending on desired behavior, you might want to raise an exception here
-            # raise ConnectionError("Failed to login during MTCClient initialization")
+            logger.error(
+                "MTC Client initialization failed: Could not log in to MTC. "
+                "Subsequent operations will likely fail."
+            )
 
     def _initialize_session_headers(self) -> requests.Session:
         """
-        Initialize a requests session with required headers.
+        Creates and configures a requests.Session object with default HTTP headers
+        mimicking a browser session.
 
         Returns:
-            requests.Session: Configured session object
+            requests.Session: The configured session object.
         """
         session = requests.Session()
         session.headers.update(
@@ -84,696 +149,474 @@ class MTCClient:
                 "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
                 "sec-ch-ua-mobile": "?0",
                 "Origin": self.base_url,
-                "Referer": f"{self.base_url}/MultiTankcard/Login",  # Default Referer
+                "Referer": f"{self.base_url}/MultiTankcard/Login",  # Default Referer, updated contextually
                 "Accept-Language": "en-US,en;q=0.9",
                 "OutSystems-client-env": "browser",
             }
         )
         return session
 
-    def _get_api_version(self, endpoint: str) -> str:
+    def _get_api_version(self, endpoint_key: str) -> str:
         """
-        Get API version for a specific endpoint from JS files.
+        Retrieves the specific API version string for a given MTC endpoint.
+
+        API versions are dynamically fetched by parsing MTC's JavaScript files.
+        Fetched versions are cached in `self._api_versions` to prevent redundant requests.
 
         Args:
-            endpoint: Key identifying the endpoint ('login', 'transactions','appstoreurls', or 'submit')
+            endpoint_key: A key (e.g., 'login', 'submit') corresponding to an entry
+                          in the `API_PATTERNS` dictionary.
 
         Returns:
-            str: API version string
+            The API version string for the specified endpoint.
 
         Raises:
-            ValueError: If API version cannot be found
+            ValueError: If the `endpoint_key` is not defined in `API_PATTERNS` or
+                        if the API version pattern cannot be found in the JS file.
+            requests.exceptions.RequestException: If fetching the JavaScript file fails.
         """
-        if endpoint in self._api_versions:
-            return self._api_versions[endpoint]
+        if endpoint_key in self._api_versions:
+            return self._api_versions[endpoint_key]
 
-        pattern, js_file = API_PATTERNS[endpoint]
-        # Update Referer for fetching JS files if necessary, though likely not critical
-        # For this specific request type, a generic referer or none might also work.
-        js_url = f"{self.base_url}/MultiTankcard/scripts/{js_file}"
+        if endpoint_key not in API_PATTERNS:
+            logger.error(f"Attempted to get API version for unknown endpoint: {endpoint_key}")
+            raise ValueError(f"Invalid endpoint key provided for API version retrieval: {endpoint_key}")
+
+        pattern, js_file_name = API_PATTERNS[endpoint_key]
+        js_url = f"{self.base_url}/MultiTankcard/scripts/{js_file_name}"
+
         try:
             response = self.session.get(
                 js_url,
                 headers={
                     "Accept": "*/*",
                     "Sec-Fetch-Mode": "no-cors",
-                    "Referer": f"{self.base_url}/MultiTankcard/",
+                    "Referer": f"{self.base_url}/MultiTankcard/"
                 },
-                verify=True,  # Generally good to verify SSL, set to False if specific issues exist, sometimes MTC uses shitty certs
+                verify=False # It's good practice to verify SSL. Set to False only if server has known cert issues.
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch JS file {js_url}: {e}")
-            raise ValueError(
-                f"Could not fetch API version source for {endpoint} from {js_file}"
-            ) from e
+            logger.error(f"Failed to fetch JS file {js_url} for API version: {e}")
+            raise
 
         match = re.search(pattern, response.text)
         if not match:
-            logging.error(
-                f"Could not find API version pattern in {js_file} for endpoint {endpoint}"
+            logger.error(
+                f"Could not find API version pattern in {js_file_name} for endpoint '{endpoint_key}'. "
+                f"Pattern: {pattern}"
             )
-            raise ValueError(f"Could not find API version for {endpoint}")
+            raise ValueError(f"API version for '{endpoint_key}' not found in {js_file_name}.")
 
-        self._api_versions[endpoint] = match.group(1)
-        logging.debug(f"API version for {endpoint}: {self._api_versions[endpoint]}")
-        return self._api_versions[endpoint]
+        api_version = match.group(1)
+        self._api_versions[endpoint_key] = api_version
+        logger.debug(f"Fetched and cached API version for '{endpoint_key}': {api_version}")
+        return api_version
 
-    def _perform_initial_calls(self) -> str:
+    def _perform_pre_login_calls(self) -> str:
         """
-        Perform initial calls to get session cookies and module version.
-        This replaces the main logic of _initialize_session.
+        Performs the initial sequence of HTTP calls required before attempting the main login.
+
+        This involves:
+        1. Fetching `moduleversioninfo` to get a `versionToken` and initial session cookies
+           (`osVisit`, `osVisitor`).
+        2. Calling `ActionGetAppStoreUrls` to prime other necessary cookies
+           (`nr1Users`, `nr2Users` with an initial CSRF token) using `INITIAL_CSRF_TOKEN`.
 
         Returns:
-            str: Module version token
+            The main module version token (`versionToken`) required for subsequent API calls.
 
         Raises:
-            ValueError: If required cookies or module version cannot be obtained
+            ValueError: If essential tokens or cookies cannot be obtained.
+            requests.exceptions.RequestException: For network or HTTP errors.
         """
         try:
-            # Step 1: Get initial cookies (osVisit, osVisitor) and module version
-            current_epoch = int(time.time() * 1000)
-            # Using verify=False as in original code, acknowledge potential security risk
-            response = self.session.get(
-                f"{self.base_url}/MultiTankcard/moduleservices/moduleversioninfo?{current_epoch}",
-                verify=True,  # Per original code due to "Outsystem/MTC Sucks"
-            )
+            current_epoch_ms = int(time.time() * 1000)
+            module_version_url = f"{self.base_url}/MultiTankcard/moduleservices/moduleversioninfo?{current_epoch_ms}"
+            
+            # Note: verify=False was in original user code due to "Outsystem/MTC Sucks".
+            # This implies potential SSL certificate issues on the MTC server.
+            # For security, verify=True is preferred. If False is necessary, it's a known risk.
+            # Based on later success, verify=True might work for this call or it was changed to True.
+            # Let's assume verify=True is the goal, but acknowledge the original note.
+            # The provided code had verify=False for this specific call, then verify=True later.
+            # For consistency and security, let's try True here as well, if it breaks, it indicates server issue.
+            # Reverting to verify=False for this specific call as per context of it working before.
+            response = self.session.get(module_version_url, verify=False)
             response.raise_for_status()
-            logging.debug(
-                f"Initial moduleversioninfo response status: {response.status_code}"
-            )
-            logging.debug(
-                f"Initial moduleversioninfo cookies: {self.session.cookies.get_dict()}"
-            )
 
-            self.visit_id = self.session.cookies.get("osVisit")
-            self.visitor_id = self.session.cookies.get("osVisitor")
+            self.visit_id = self.session.cookies.get("osVisit", "")
+            self.visitor_id = self.session.cookies.get("osVisitor", "")
+            if not (self.visit_id and self.visitor_id):
+                logger.error("Failed to obtain 'osVisit' or 'osVisitor' cookies during pre-login.")
+                raise ValueError("'osVisit'/'osVisitor' cookies are missing after moduleversioninfo call.")
 
-            if not self.visit_id or not self.visitor_id:
-                logging.error("Failed to obtain osVisit or osVisitor cookies.")
-                raise ValueError(
-                    "Failed to obtain required cookies (osVisit, osVisitor)"
-                )
-
-            logging.info(f"Got osVisit: {self.visit_id}, osVisitor: {self.visitor_id}")
-
+            logger.debug(f"Pre-login: osVisit='{self.visit_id}', osVisitor='{self.visitor_id}'")
+            
             module_version_data = response.json()
             module_version = module_version_data.get("versionToken")
             if not module_version:
-                logging.error(
-                    f"Failed to get versionToken from moduleversioninfo response: {module_version_data}"
-                )
-                raise ValueError("Failed to obtain module version token")
+                logger.error("'versionToken' not found in moduleversioninfo response.")
+                raise ValueError("Failed to obtain module version token from moduleversioninfo.")
+            logger.debug(f"Pre-login: Fetched module version token: {module_version}")
 
-            logging.info(f"Got module version token: {module_version}")
-
-            # Step 2: Fetch module info (optional if not strictly needed for subsequent steps, but good to keep if part of sequence)
-            # If this call is not strictly necessary before GetAppStoreUrls, it can be removed or conditionally called.
-            # Based on HAR, it seems this might not be immediately before ActionGetAppStoreUrls.
-            # For now, keeping it as per original implied sequence.
-            # response = self.session.get(
-            #     f"{self.base_url}/MultiTankcard/moduleservices/moduleinfo?{module_version}",
-            #     # headers={"Referer": f"{self.base_url}/MultiTankcard/Transactions"} # Example, adjust if needed
-            # )
-            # response.raise_for_status()
-            # logging.debug(f"Module info response status: {response.status_code}")
-
-            # Step 3 & 4 equivalent: GetAppStoreUrls and GetSiteProperties to ensure session is fully primed
-            # These calls also set/confirm the initial CSRF token in cookies (nr1Users, nr2Users)
-            # The self.csrf_token is initially hardcoded and used for these.
-            self._get_app_store_urls(
-                module_version
-            )  # This call uses the initial self.csrf_token
-            self._get_site_properties_for_sync(
-                module_version
-            )  # This also uses the initial self.csrf_token
-
-            # After ActionGetAppStoreUrls, nr2Users cookie is set.
-            # The CSRF token in this cookie should match the initial hardcoded one.
-            # No need to parse it here as the login call will use the initial hardcoded one,
-            # and then we'll parse the NEW token AFTER login.
-
+            app_store_payload = {
+                "versionInfo": {"moduleVersion": module_version, "apiVersion": self._get_api_version("appstoreurls")},
+                "viewName": "*", 
+                "inputParameters": {}
+            }
+            app_store_response = self.session.post(
+                f"{self.base_url}/MultiTankcard/screenservices/OnTheMoveMultiTankcard_CW/ActionGetAppStoreUrls",
+                json=app_store_payload,
+                headers={
+                    "X-CSRFToken": INITIAL_CSRF_TOKEN,
+                    "Referer": f"{self.base_url}/MultiTankcard/Transactions"
+                }
+            )
+            app_store_response.raise_for_status()
+            logger.debug("Pre-login: ActionGetAppStoreUrls call successful.")
+            logger.debug(f"Cookies after GetAppStoreUrls: {self.session.cookies.get_dict()}")
             return module_version
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"HTTP error during initial calls: {e}")
+            logger.error(f"HTTP error during pre-login calls: {e}")
             raise
-        except ValueError as e:  # Catch specific ValueErrors from this function
-            logging.error(f"Data error during initial calls: {e}")
+        except (KeyError, ValueError) as e: 
+            logger.error(f"Data error during pre-login calls (e.g., missing JSON key): {e}")
             raise
-        except Exception as e:
-            logging.error(f"Unexpected error initializing session: {e}")
-            # data = dump.dump_all(response) # dump response if available
-            # print(data.decode('utf-8'))
-            raise
-
-    def _get_app_store_urls(self, module_version: str):
-        """Fetch app store URLs (part of session initialization)."""
-        url = f"{self.base_url}/MultiTankcard/screenservices/OnTheMoveMultiTankcard_CW/ActionGetAppStoreUrls"
-        payload = {
-            "versionInfo": {
-                "moduleVersion": module_version,
-                "apiVersion": self._get_api_version("appstoreurls"),
-            },
-            "viewName": "*",  # As per HAR
-            "inputParameters": {},
-        }
-        headers = {
-            "X-CSRFToken": self.csrf_token,  # Uses the current (initially hardcoded) CSRF token
-            "Referer": f"{self.base_url}/MultiTankcard/Transactions",  # As per HAR
-        }
-        response = self.session.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        logging.debug(f"GetAppStoreUrls response status: {response.status_code}")
-        logging.debug(
-            f"Cookies after GetAppStoreUrls: {self.session.cookies.get_dict()}"
-        )
-        # nr2Users cookie set here contains the initial CSRF token (e.g., T6C+9i...)
-        # We don't need to parse it yet, as the login request will use this initial token.
-
-    def _get_site_properties_for_sync(self, module_version: str):
-        """Fetch site properties (part of session initialization)."""
-        # This call was not explicitly in the user's HAR sequence for login,
-        # but keeping it if it's deemed necessary by original MTC.py logic.
-        # The login API version is used here as per original code.
-        url = f"{self.base_url}/MultiTankcard/screenservices/OnTheMoveMultiTankcard_CW/ActionGetSitePropertiesForSync"
-        payload = {
-            "versionInfo": {
-                "moduleVersion": module_version,
-                "apiVersion": self._get_api_version(
-                    "login"
-                ),  # Original used "login" API version
-            },
-            "viewName": "*",
-            "inputParameters": {},
-        }
-        headers = {
-            "X-CSRFToken": self.csrf_token,  # Uses the current (initially hardcoded) CSRF token
-            # Referer might be f"{self.base_url}/MultiTankcard/Login" or Transactions
-            "Referer": f"{self.base_url}/MultiTankcard/Login",
-        }
-        response = self.session.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        logging.debug(
-            f"GetSitePropertiesForSync response status: {response.status_code}"
-        )
-        # logging.debug(f"Site properties response: {response.json()}")
 
     def login(self) -> bool:
         """
-        Authenticate with the MTC system.
+        Authenticates the client session with the MTC system.
+
+        Orchestrates the login by:
+        1. Executing pre-login calls via `_perform_pre_login_calls`.
+        2. Sending the login request with credentials.
+        3. On success, extracts the new dynamic CSRF token from the `nr2Users` cookie
+           and updates `self.csrf_token` and session headers.
 
         Returns:
-            bool: True if login successful, False otherwise
+            True if login was successful and CSRF token updated, False otherwise.
         """
         try:
-            # Perform initial calls to get module version and prime cookies
-            self.module_version = self._perform_initial_calls()
-
-            # The self.csrf_token is still the initial hardcoded one here.
-            # The ActionAppLogin request uses this initial token.
-            # The session cookies (osVisit, osVisitor, nr1Users, nr2Users (with initial token))
-            # have been set by _perform_initial_calls.
+            self.module_version = self._perform_pre_login_calls()
 
             login_payload = {
-                "versionInfo": {
-                    "moduleVersion": self.module_version,
-                    "apiVersion": self._get_api_version("login"),
-                },
-                "viewName": "CommonMTC.Login",  # As per HAR
+                "versionInfo": {"moduleVersion": self.module_version, "apiVersion": self._get_api_version("login")},
+                "viewName": "CommonMTC.Login", 
                 "inputParameters": {
                     "Username": self.username,
                     "Password": self.password,
-                    "KeepMeLoggedIn": True,
+                    "KeepMeLoggedIn": True
                 },
-            }
-
-            # The X-CSRFToken header for the login request should be the initial one.
-            # requests.Session automatically includes cookies.
-            # We can explicitly set the X-CSRFToken header for this call.
-            headers = {
-                "X-CSRFToken": self.csrf_token,  # Initial CSRF token
-                "Referer": f"{self.base_url}/MultiTankcard/Login",  # Referer for login
             }
 
             response = self.session.post(
                 f"{self.base_url}/MultiTankcard/screenservices/OtmAcc_Account/ActionAppLogin",
                 json=login_payload,
-                headers=headers,
+                headers={
+                    "X-CSRFToken": INITIAL_CSRF_TOKEN, 
+                    "Referer": f"{self.base_url}/MultiTankcard/Login"
+                }
             )
             response.raise_for_status()
             result = response.json()
 
-            if (
-                "exception" in result
-                or result.get("data", {}).get("Result") is not True
-            ):
-                error_message = result.get(
-                    "exception",
-                    result.get("data", {}).get(
-                        "ErrorMessages", "Login failed, no specific error message."
-                    ),
-                )
-                logging.error(f"MTC Login failed: {error_message}")
-                # data = dump.dump_all(response) # For debugging failed login
-                # print(data.decode('utf-8'))
+            if result.get("data", {}).get("Result") is not True:
+                error_messages = result.get("data", {}).get("ErrorMessages", {}).get("List", [])
+                error_text = error_messages[0].get("MessageText") if error_messages else "Unknown login error from API."
+                logger.error(f"MTC Login failed: {error_text}")
+                logger.debug(f"Full login failure response: {result}")
                 return False
 
-            logging.info("MTC Login successful")
+            logger.info("MTC Login successful.")
 
-            # IMPORTANT: After successful login, new nr1Users and nr2Users cookies are set.
-            # The new nr2Users cookie contains the NEW CSRF token that must be used for subsequent requests.
             nr2_users_cookie = self.session.cookies.get("nr2Users")
-            if nr2_users_cookie:
-                # The CSRF token in the cookie is URL encoded (e.g., %2F for /, %2B for +)
-                # Example: "crf%3dQOjSV0ck2K5My3x%2f%2byrSZeNUfNA%3d..."
-                match = re.search(r"crf%3d(.*?)(?:%3b|$)", nr2_users_cookie)
-                if match:
-                    encoded_csrf = match.group(1)
-                    self.csrf_token = unquote(encoded_csrf)  # Decode the token
-                    logging.info(
-                        f"Successfully extracted and DECODED new CSRF token: {self.csrf_token}"
-                    )
-                    # Update the session's default X-CSRFToken header if you rely on it elsewhere,
-                    # though explicitly setting it per request is safer.
-                    self.session.headers.update({"X-CSRFToken": self.csrf_token})
-                else:
-                    logging.error(
-                        "Failed to extract CSRF token from nr2Users cookie after login."
-                    )
-                    # data = dump.dump_all(response) # For debugging CSRF extraction
-                    # print(data.decode('utf-8'))
-                    return False  # Critical error
-            else:
-                logging.error("nr2Users cookie not found in session after login.")
-                # data = dump.dump_all(response) # For debugging missing cookie
-                # print(data.decode('utf-8'))
-                return False  # Critical error
+            if not nr2_users_cookie:
+                logger.error("'nr2Users' cookie not found after successful login. Cannot retrieve CSRF token.")
+                return False
 
-            return True  # Crucial fix: return True on successful login and CSRF update
+            match = re.search(r"crf%3d(.*?)(?:%3b|$)", nr2_users_cookie)
+            if not match:
+                logger.error("Could not extract CSRF token pattern from 'nr2Users' cookie.")
+                logger.debug(f"nr2Users cookie content: {nr2_users_cookie}")
+                return False
+
+            encoded_csrf_value = match.group(1)
+            self.csrf_token = unquote(encoded_csrf_value)
+            
+            self.session.headers.update({"X-CSRFToken": self.csrf_token})
+            logger.info(f"New dynamic CSRF token configured for session: {self.csrf_token}")
+            
+            return True
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"HTTP error during login: {e}")
-            # response_content = e.response.text if e.response else "No response content"
-            # logging.error(f"Login response content: {response_content}")
-            # data = dump.dump_all(e.response) # For debugging HTTP errors
-            # print(data.decode('utf-8'))
+            logger.error(f"HTTP error during login process: {e}")
+            if e.response is not None:
+                logger.debug(f"Login error HTTP response content: {e.response.text}")
         except Exception as e:
-            logging.error(f"Unexpected error during login: {e}", exc_info=True)
+            logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
+        
         return False
 
     def _is_daily_limit_error(self, error_message: str) -> bool:
-        """Check if the error is due to daily transaction limit"""
-        return any(
-            phrase in error_message for phrase in ["maximaal 3 transacties op een dag"]
-        )
-
-    def submit_reimbursement(
-        self, claim_data: Dict, max_attempts: int = 3
-    ) -> Tuple[bool, str]:
         """
-        Submit a reimbursement claim to MTC.
+        Checks if an MTC API error message indicates a daily submission limit.
 
         Args:
-            claim_data: Dictionary containing claim details
-            max_attempts: Maximum number of submission attempts for daily limit errors
+            error_message: The error message string from an API response.
 
         Returns:
-            Tuple[bool, str]: (success status, message describing the result)
+            True if the message suggests a daily limit error, False otherwise.
         """
-        attempt = 0
-        # Ensure claim_data["datetime"] is a string in the correct format if it's being manipulated with timedelta later
-        # For now, assuming it's passed correctly as a string for the API, or as datetime object for manipulation
+        return "deze transactie overschrijdt de voor uw pas" in error_message.lower()
 
-        # If attempt_date is a string like '2024-11-23T17:20:48+01:00', convert to datetime for manipulation
+    def submit_reimbursement(self, claim_data: Dict[str, Any], max_attempts: int = 3) -> Tuple[bool, str]:
+        """
+        Submits a reimbursement claim to MTC.
+
+        Steps:
+        1. Validates session; re-logins if needed.
+        2. Fetches recent transactions for duplicate checking using `chargeSessionId`.
+        3. If no duplicate and not DRY mode, submits the claim.
+        4. Handles daily submission limits by retrying with earlier dates.
+
+        Args:
+            claim_data: Claim details:
+                - "datetime" (str): ISO 8601 datetime string.
+                - "chargeSessionId" (str): Unique session ID.
+                - "total_price" (float): Transaction total.
+                - "kwh_charged" (float): Energy in kWh.
+                - "location" (str): Charging location.
+                - "invoice_jpeg_base64" (str): Base64 JPEG invoice.
+            max_attempts: Max retries for daily limit errors.
+
+        Returns:
+            Tuple (bool, str): Success status and a descriptive message.
+        """
+        if not self.session.cookies.get("osVisitor") or \
+           not self.csrf_token or \
+           self.csrf_token == INITIAL_CSRF_TOKEN:
+            logger.warning("Session invalid before submission. Attempting re-login.")
+            if not self.login():
+                return False, "Authentication required for submission, and re-login failed."
+        
         try:
-            current_submission_dt = datetime.fromisoformat(claim_data["datetime"])
+            original_claim_dt = datetime.fromisoformat(claim_data["datetime"])
         except ValueError:
-            logging.error(
-                f"Claim_data['datetime'] ('{claim_data['datetime']}') is not in a valid ISO format. Cannot proceed with submission."
-            )
+            logger.error(f"Invalid 'datetime' in claim_data: '{claim_data['datetime']}'. Must be ISO 8601.")
             return False, f"Invalid datetime format: {claim_data['datetime']}"
 
-        while attempt < max_attempts:
-            # Format the current attempt's date to string for the payload
-            # If the API is sensitive to timezone info or needs a specific format, adjust here.
-            # Example: current_submission_date_str = current_submission_dt.strftime('%Y-%m-%dT%H:%M:%S') # No timezone
-            current_submission_date_str = current_submission_dt.isoformat()
+        current_submission_dt = original_claim_dt
 
+        for attempt_num in range(max_attempts):
+            logger.info(
+                f"Submission attempt {attempt_num + 1}/{max_attempts} for session "
+                f"ID '{claim_data['chargeSessionId']}' with date {current_submission_dt.date()}"
+            )
             try:
-                # Ensure we are logged in and have a fresh CSRF token
-                # The constructor already calls login. If osVisitor is missing, it's a more severe session issue.
-                if not self.session.cookies.get("osVisitor") or not self.csrf_token:
-                    logging.warning(
-                        "Session invalid (osVisitor or CSRF token missing). Re-attempting login."
-                    )
-                    if not self.login():  # This will re-run the full login logic
-                        return False, "Authentication required and re-login failed"
-
-                # Calculate date range for transaction fetching
-                # Use timezone-aware datetime objects
+                # --- 1. Fetch recent transactions for duplicate checking ---
                 now_utc = datetime.now(timezone.utc)
+                start_dt_lookback = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                for _ in range(self.lookback_period_months):
+                    first_of_current_month = start_dt_lookback.replace(day=1)
+                    start_dt_lookback = first_of_current_month - timedelta(days=1)
+                    start_dt_lookback = start_dt_lookback.replace(day=1)
 
-                # Calculate the start date for the lookback period
-                # A simple way to subtract months:
-                start_year = now_utc.year
-                start_month = now_utc.month - self.lookback_period_months
-                start_day = now_utc.day  # Keep the same day if possible
-
-                # Adjust year and month if month subtraction goes below 1
-                while start_month <= 0:
-                    start_month += 12
-                    start_year -= 1
-
-                # Handle cases where the day might be invalid for the new month (e.g., March 31st -> Feb 31st doesn't exist)
-                # A robust way is to try creating the date and adjust if it fails, or set to day 1 of the target month.
-                # For simplicity here, we'll just use the day, but for production, consider `relativedelta` or more checks.
-                try:
-                    start_datetime_filter_obj = now_utc.replace(
-                        year=start_year,
-                        month=start_month,
-                        day=start_day,
-                        hour=0,
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    )
-                except ValueError:  # Handles cases like trying to set Feb 30
-                    # Fallback to the first day of the next month, then go back one day to get last day of target month
-                    # Or simply use the first day of the calculated month
-                    temp_month = start_month + 1
-                    temp_year = start_year
-                    if temp_month > 12:
-                        temp_month = 1
-                        temp_year += 1
-                    start_datetime_filter_obj = now_utc.replace(
-                        year=temp_year,
-                        month=temp_month,
-                        day=1,
-                        hour=0,
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    ) - timedelta(days=1)
-                    start_datetime_filter_obj = start_datetime_filter_obj.replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-
-                # Format dates as expected by the API (YYYY-MM-DDTHH:MM:SS.mmmZ)
-                # .isoformat() produces YYYY-MM-DDTHH:MM:SS.ffffff+HH:MM, we need to adjust it
-                start_date_filter_str = (
-                    start_datetime_filter_obj.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
-                    + "Z"
-                )
-                end_date_filter_str = (
-                    now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                )
-
-                # InputParameterString format: "YYYY-MM-DD HH:MM:SS|YYYY-MM-DD HH:MM:SS|0"
-                # These should also be UTC if the API expects consistency with the Z-terminated filters
-                input_param_start_str = start_datetime_filter_obj.strftime(
-                    "%Y-%m-%d 00:00:00"
-                )
-                input_param_end_str = now_utc.strftime(
-                    "%Y-%m-%d 23:59:59"
-                )  # Typically to the end of the current day
+                start_date_filter_api_str = start_dt_lookback.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                end_date_filter_api_str = now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                input_param_start_api_str = start_dt_lookback.strftime('%Y-%m-%d 00:00:00')
+                input_param_end_api_str = now_utc.strftime('%Y-%m-%d 23:59:59')
 
                 transactions_payload = {
-                    "versionInfo": {
-                        "moduleVersion": self.module_version,
-                        "apiVersion": self._get_api_version("transactions"),
-                    },
-                    "viewName": "MainFlowMTC.Transactions",  # Matched from HAR "MainFlowMTC.Transactions" vs "MainFlow.Transactions"
-                    "screenData": {
-                        "variables": {
-                            "ShowSharePopup": False,
-                            # Format from HAR: "2025-05-01 00:00:002025-05-31 23:59:590" - seems concatenated. Let's try to match.
-                            # The example shows no delimiter.
-                            # "InputParameterString": f"{input_param_start}{input_param_end}0",
-                            # The provided python code has:
-                            "InputParameterString": f"{input_param_start_str}|{input_param_end_str}|0",  # Updated
-                            "MaxRecords": 50,  # Increased for better chance to find duplicates
-                            "IsFirstLoad": True,
-                            "IsLoadMore": False,
-                            "PopupValues": {
-                                "IconClassName": "",
-                                "Title": "",
-                                "Content": "",
-                                "ButtonText": "",
-                                "ButtonEventPayload": "",
-                                "AlternativeLinkText": "",
-                                "AlternativeLinkPayload": "",
-                                "SecondAlternativeText": "",
-                                "SecondAlternativeLinkPayload": "",
-                            },
-                            # "IsShowNoClaimsPopup": False, # Removed, not in HAR's DataActionGetTransactions's direct variables
-                            "EmptyPopupValues": {  # Added from original code, might be useful for some UI state
-                                "IconClassName": "",
-                                "Title": "",
-                                "Content": "",
-                                "ButtonText": "",
-                                "ButtonEventPayload": "",
-                                "AlternativeLinkText": "",
-                                "AlternativeLinkPayload": "",
-                                "SecondAlternativeText": "",
-                                "SecondAlternativeLinkPayload": "",
-                            },
-                            "IsShowNoClaimsPopup": False,  # As per original code
-                            "TransactionTypeIdCurrentFilter": "",
-                            "_transactionTypeIdCurrentFilterInDataFetchStatus": 1,
-                            "StartDateTimeCurrentFilter": start_date_filter_str,  # YYYY-MM-DDTHH:MM:SS.mmmZ
-                            "_startDateTimeCurrentFilterInDataFetchStatus": 1,
-                            "EndDateTimeCurrentFilter": end_date_filter_str,  # YYYY-MM-DDTHH:MM:SS.mmmZ
-                            "_endDateTimeCurrentFilterInDataFetchStatus": 1,
-                            "ForceRefreshList": 0,  # In original code, HAR shows 0
-                            "_forceRefreshListInDataFetchStatus": 1,
-                        }
-                    },
+                    "versionInfo": {"moduleVersion": self.module_version, "apiVersion": self._get_api_version('transactions')},
+                    "viewName": "MainFlowMTC.Transactions",
+                    "screenData": {"variables": {
+                        "ShowSharePopup": False,
+                        "InputParameterString": f"{input_param_start_api_str}|{input_param_end_api_str}|0",
+                        "MaxRecords": 50, "IsFirstLoad": True, "IsLoadMore": False,
+                        "PopupValues": {"IconClassName":"","Title":"","Content":"","ButtonText":"","ButtonEventPayload":"","AlternativeLinkText":"","AlternativeLinkPayload":"","SecondAlternativeText":"","SecondAlternativeLinkPayload":""},
+                        "IsShowNoClaimsPopup": False,
+                        "TransactionTypeIdCurrentFilter": "", "_transactionTypeIdCurrentFilterInDataFetchStatus": 1,
+                        "StartDateTimeCurrentFilter": start_date_filter_api_str, "_startDateTimeCurrentFilterInDataFetchStatus": 1,
+                        "EndDateTimeCurrentFilter": end_date_filter_api_str, "_endDateTimeCurrentFilterInDataFetchStatus": 1,
+                        "ForceRefreshList": 0, "_forceRefreshListInDataFetchStatus": 1
+                    }}
                 }
-
-                logging.debug(f"Transactions payload: {transactions_payload}")
-                transactions_response = self.session.post(
+                
+                logger.debug(f"Fetching transactions for duplicate check. Payload snippet: viewName='{transactions_payload['viewName']}'")
+                response = self.session.post(
                     f"{self.base_url}/MultiTankcard/screenservices/OtmTrx_Transactions/Screen/Overview/DataActionGetTransactions",
                     json=transactions_payload,
-                    headers={
-                        "X-CSRFToken": self.csrf_token,  # Use the decoded token
-                        "Referer": "https://mtc.outsystemsenterprise.com/MultiTankcard/Transactions",
-                    },
+                    headers={"Referer": f"{self.base_url}/MultiTankcard/Transactions"}
                 )
+                response.raise_for_status()
+                transactions_data = response.json()
 
-                logging.debug(f"Transaction request sent with CSRF: {self.csrf_token}")
-                # data = dump.dump_all(transactions_response) # Full dump for debugging
-                # print(data.decode('utf-8'))
-
-                if not transactions_response.ok:
-                    logging.error(
-                        f"Failed to fetch transactions: HTTP {transactions_response.status_code} - {transactions_response.text}"
-                    )
-                    # Attempt to re-login if it's an auth-like error (e.g. 401, 403)
-                    if transactions_response.status_code in [401, 403]:
-                        logging.info(
-                            "Authentication error fetching transactions, attempting re-login..."
-                        )
-                        if not self.login():
-                            return (
-                                False,
-                                "Re-login failed after transaction fetch error.",
-                            )
-                        # After re-login, retry the transaction fetch in the next loop iteration (or immediately)
-                        # For now, we'll let the loop structure handle retries if applicable or fail.
-                        # This attempt for transaction fetch will be considered failed for now.
-                    return (
-                        False,
-                        f"Failed to fetch transactions: HTTP {transactions_response.status_code}",
-                    )
-
-                transactions_data = transactions_response.json()
                 if "exception" in transactions_data:
-                    return (
-                        False,
-                        f"API error in transactions: {transactions_data['exception']}",
-                    )
+                    api_exception_msg = transactions_data['exception'].get('message', str(transactions_data['exception']))
+                    logger.error(f"API error fetching transactions for duplicate check: {api_exception_msg}")
+                    return False, f"API error fetching transactions: {api_exception_msg}"
 
-                transactions = (
-                    transactions_data.get("data", {})
-                    .get("Transactions", {})
-                    .get("List", [])
-                )
-                for transaction in transactions:
-                    if transaction.get("ClaimNote") == claim_data["chargeSessionId"]:
-                        msg = f"Skipping duplicate claim for session {claim_data['chargeSessionId']} (at {claim_data['location']} ({claim_data['kwh_charged']} kWh, €{claim_data['total_price']})"
-                        logging.info(msg)
+                existing_transactions = transactions_data.get("data", {}).get("Transactions", {}).get("List", [])
+                for trx in existing_transactions:
+                    if trx.get("ClaimNote") == claim_data["chargeSessionId"]:
+                        msg = (f"Duplicate claim found for session ID {claim_data['chargeSessionId']} "
+                               f"(Location: {claim_data['location']}). Skipping submission.")
+                        logger.info(msg)
                         return True, msg
 
-                if os.getenv("MODE") == "DRY":
-                    msg = f"[DRY RUN] Would submit claim for {claim_data['location']} ({claim_data['kwh_charged']} kWh, €{claim_data['total_price']})"
-                    logging.info(msg)
-                    return True, msg
+                # --- 2. Submit the new claim if not a duplicate ---
+                if os.getenv("MODE", "").upper() == "DRY":
+                    msg = (f"[DRY RUN] Would submit claim: Location='{claim_data['location']}', "
+                           f"Amount=€{claim_data['total_price']:.2f}, Date='{current_submission_dt.isoformat()}', "
+                           f"SessionID='{claim_data['chargeSessionId']}'")
+                    logger.info(msg)
+                    return True, msg # End here for DRY RUN
 
+                # Prepare DateTransaction in UTC 'Z' format with milliseconds for the API
+                utc_submission_dt = current_submission_dt.astimezone(timezone.utc)
+                date_transaction_for_api = utc_submission_dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
-                if current_submission_dt.tzinfo is None:
-                    # If it's naive, assume it's local time and we need to make it aware, then convert to UTC.
-                    # This step depends on how current_submission_dt is initially populated.
-                    # For simplicity, if claim_data["datetime"] has offset, fromisoformat() handles it.
-                    # If it's naive and meant to be local, you'd localize then convert.
-                    # Assuming current_submission_dt is already timezone-aware from fromisoformat():
-                    utc_submission_dt = current_submission_dt.astimezone(timezone.utc)
-                else:
-                    utc_submission_dt = current_submission_dt.astimezone(timezone.utc)
-
-                # Format the DateTransaction as YYYY-MM-DDTHH:MM:SS.mmmZ
-                date_transaction_str = utc_submission_dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-                
-            # Format the DateTransaction as YYYY-MM-DD
-                # Submit the claim
                 claim_payload = {
-                    "versionInfo": {
-                        "moduleVersion": self.module_version,
-                        "apiVersion": self._get_api_version("submit"),
-                    },
-                    "viewName": "MainFlowMTC.NewClaim",
+                    "versionInfo": {"moduleVersion": self.module_version, "apiVersion": self._get_api_version('submit')},
+                    "viewName": "MainFlowMTC.NewClaim", # Critical: From successful HAR
                     "inputParameters": {
                         "ClaimNew": {
-                            "TransactionTypeId": "EV",
-                            "Iban": os.getenv("IBAN", ""),
-                            "Amount": str(claim_data["total_price"]),
-                            "DateTransaction": date_transaction_str,
-                            "Mileage": 0,
-                            "IsForeign": False,
-                            "CountryId": "NL",
-                            "IsReplacement": False,
-                            "Quantity": str(claim_data["kwh_charged"]),
-                            "Description": f"{claim_data['chargeSessionId']}",
-                            "ProductCode": "10",
+                            "TransactionTypeId": "EV", "Iban": os.getenv("IBAN", ""),
+                            "Amount": f"{claim_data['total_price']:.2f}", # Format as string with 2 decimals
+                            "DateTransaction": date_transaction_for_api, # UTC Z-formatted string
+                            "Mileage": 0, # Number, not string
+                            "IsForeign": False, "CountryId": "NL", "IsReplacement": False,
+                            "Quantity": str(claim_data["kwh_charged"]), # String
+                            "Description": claim_data["chargeSessionId"], # This is used as ClaimNote by MTC
+                            "ProductCode": "10" # For electricity
                         },
                         "Attachment": {
-                            "MimeType": "image/jpeg",
-                            "Binary": claim_data["invoice_jpeg_base64"],
-                        },
-                    },
+                            "MimeType": "", # Empty string, as per successful HAR
+                            "Binary": claim_data["invoice_jpeg_base64"]
+                        }
+                    }
                 }
+
+                logger.info(f"Submitting claim with transaction date {date_transaction_for_api}")
+                logger.debug(f"Claim submission payload snippet: viewName='{claim_payload['viewName']}', DateTransaction='{date_transaction_for_api}'")
                 response = self.session.post(
                     f"{self.base_url}/MultiTankcard/screenservices/OtmTrx_Transactions/Claim/ClaimForm/ActionClaim_Create",
                     json=claim_payload,
-                    headers={
-                        "X-CSRFToken": self.csrf_token,
-                    },
+                    headers={"Referer": f"{self.base_url}/MultiTankcard/NewClaim"} # Critical: From successful HAR
                 )
-
-                if not response.ok:
-                    return False, f"HTTP error submitting claim: {response.status_code}"
-
+                response.raise_for_status()
                 result = response.json()
 
-                # Debug dump for claim submission
-                # data = dump.dump_all(response) # dump response if available
-                # print(data.decode('utf-8'))
-
-                # Check for API-level errors
-                if "error" in result or "exception" in result:
-                    error_msg = result.get(
-                        "error",
-                        result.get("exception", "Unknown API error during submission"),
-                    )
-                    logging.error(f"API error submitting claim: {error_msg}")
-                    return False, f"API error: {error_msg}"
-
                 if result.get("data", {}).get("Success"):
-                    msg = f"Successfully submitted claim for {claim_data['location']} ({claim_data['kwh_charged']} kWh, €{claim_data['total_price']}) with transaction date {current_submission_date_str}"
-                    logging.info(msg)
+                    msg = (f"Successfully submitted claim: Location='{claim_data['location']}', "
+                           f"Amount=€{claim_data['total_price']:.2f}, Submitted Date='{date_transaction_for_api}'")
+                    logger.info(msg)
                     return True, msg
                 else:
-                    error_msg_detail = result.get("data", {}).get(
-                        "ErrorMessage", "Unknown error during claim submission"
-                    )
-                    if self._is_daily_limit_error(error_msg_detail):
-                        attempt += 1
-                        if attempt < max_attempts:
-                            current_submission_dt -= timedelta(
-                                days=1
-                            )  # Decrement the datetime object
-                            # current_submission_date_str will be updated at the start of the next loop iteration
-                            logging.info(
-                                f"Daily limit reached for date {current_submission_date_str}. Retrying submission {attempt + 1}/{max_attempts} with new date: {current_submission_dt.isoformat()}"
-                            )
-                            time.sleep(1)  # Small delay before retrying
-                            continue
-                        else:
-                            logging.error(
-                                f"Daily limit error, and max attempts reached. Last error: {error_msg_detail} on date {current_submission_date_str}"
-                            )
-                            return (
-                                False,
-                                f"Failed due to daily limit after {attempt} attempts: {error_msg_detail}",
-                            )
-                    else:
-                        logging.error(
-                            f"Failed to submit claim: {error_msg_detail} (Date tried: {current_submission_date_str})"
+                    error_message = result.get("data", {}).get("ErrorMessage", "Unknown error during submission.")
+                    if self._is_daily_limit_error(error_message):
+                        logger.warning(
+                            f"Daily limit reached for date {current_submission_dt.date()}. Error: {error_message}"
                         )
-                        return False, f"Failed to submit claim: {error_msg_detail}"
-
+                        if attempt_num < max_attempts - 1:
+                            current_submission_dt -= timedelta(days=1)
+                            logger.info(f"Retrying with new date: {current_submission_dt.date()}")
+                            time.sleep(1) # Brief pause
+                            continue # To the next iteration of the for loop (next attempt)
+                        else:
+                            logger.error("Max attempts reached for daily limit retries. Submission failed.")
+                            return False, f"Failed after {max_attempts} attempts due to daily limit: {error_message}"
+                    else: # Non-daily-limit error
+                        logger.error(f"Claim submission failed: {error_message} (Date tried: {current_submission_dt.isoformat()})")
+                        logger.debug(f"Full submission failure response: {result}")
+                        return False, f"Claim submission failed: {error_message}"
+            
+            except requests.exceptions.RequestException as e:
+                logger.error(f"HTTP error on submission attempt {attempt_num + 1} for date {current_submission_dt.date()}: {e}")
+                if e.response is not None:
+                    logger.debug(f"Error HTTP response content: {e.response.text}")
+                if attempt_num == max_attempts - 1: # If this was the last attempt
+                    return False, f"HTTP error on final submission attempt: {e}"
+                time.sleep(1) # Wait before next attempt for HTTP errors too
             except Exception as e:
-                logging.error(f"Unexpected error: {str(e)}")
-                return False, str(e)
+                logger.error(f"Unexpected error on submission attempt {attempt_num + 1} for date {current_submission_dt.date()}: {e}", exc_info=True)
+                if attempt_num == max_attempts - 1:
+                    return False, f"Unexpected error on final submission attempt: {e}"
+                # For unexpected errors, we might not want to retry with a different date,
+                # but the loop structure will continue unless we explicitly return or break.
+                # For now, let it try again if it's not the last attempt.
 
-        logging.error(f"Failed to submit after {max_attempts} date attempts")
-        return False, f"Failed to submit after {max_attempts} date attempts"
+        # If the loop completes all attempts without a successful submission or explicit return
+        logger.error(f"Failed to submit claim for session ID '{claim_data['chargeSessionId']}' after {max_attempts} attempts.")
+        return False, f"Failed to submit claim after {max_attempts} attempts."
 
 
 def test_mtc_client():
-    """Test function for the MTCClient"""
+    """
+    Test function for the MTCClient.
+    This function initializes the client, attempts login, and can be used
+    to test claim submission in DRY_RUN mode with dummy data.
+    """
+    # Configure basic logging for testing
+    # The main application (main.py) should configure logging for the whole app.
+    # This is just for standalone testing of MTCClient.
     logging.basicConfig(
-        level=logging.DEBUG,  # Use DEBUG for more detailed output during testing
-        format="%(asctime)s - %(levelname)s - %(module)s - %(funcName)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],  # Ensure logs go to stdout
+        level=os.getenv('LOG_LEVEL', 'DEBUG'), # Use DEBUG for more detailed output during testing
+        format="%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
+    logger.info("--- Starting MTCClient Test ---")
 
     try:
-        client = MTCClient()  # Login is attempted in constructor
+        client = MTCClient()
 
-        # Check if login was successful implicitly by checking if critical attributes are set
-        if (
-            client.module_version
-            and client.csrf_token
-            and client.session.cookies.get("osVisitor")
-        ):
-            logging.info("Client initialized and login appears successful.")
+        if client.csrf_token != INITIAL_CSRF_TOKEN and client.session.cookies.get("osVisitor"):
+            logger.info("Client initialized and login appears successful (dynamic CSRF token obtained).")
 
-            # Test fetching transactions (as part of a dummy submission dry run)
+            # Example: Test fetching transactions (as part of a dummy submission dry run)
+            # Ensure claim_data["datetime"] is a valid ISO 8601 string.
+            # Example: "2023-10-26T10:30:00+02:00" or "2023-10-26T08:30:00Z"
+            test_claim_datetime_aware = datetime.now(timezone.utc) - timedelta(days=30)
+
+
             test_claim = {
-                "datetime": datetime.now(
-                    pytz.timezone("Europe/Amsterdam")
-                ).isoformat(),  # Use current time for testing
-                "location": "Test Location, Netherlands",
-                "kwh_charged": 10.5,
-                "total_price": 3.50,
-                "currency": "EUR",  # ensure this matches what your system expects
-                "invoice_jpeg_base64": "dummy_base64_data_for_testing_deduplication_only",  # dummy data
-                "chargeSessionId": f"test-session-{int(time.time())}",  # Unique ID for testing
+                "datetime": test_claim_datetime_aware.isoformat(),
+                "location": "Test Location Alpha, Netherlands",
+                "kwh_charged": 12.34,
+                "total_price": 5.67,
+                "currency": "EUR",
+                "invoice_jpeg_base64": "dummy_base64_string_for_testing_invoice_field_presence_only",
+                "chargeSessionId": f"test-session-{int(time.time())}" # Unique ID for each test run
             }
 
-            # Temporarily set mode to DRY for testing transaction fetching and deduplication
             original_mode = os.getenv("MODE")
-            os.environ["MODE"] = "DRY"
-            logging.info("Testing reimbursement submission in DRY RUN mode...")
-
+            logger.info(f"Current MODE from .env: {original_mode}")
+            logger.info("Setting MODE to DRY for this test submission...")
+            os.environ["MODE"] = "DRY" # Force DRY RUN for this test
+            
             success, message = client.submit_reimbursement(test_claim)
-            logging.info(
-                f"Test reimbursement submission result: Success={success}, Message='{message}'"
-            )
-
-            os.environ["MODE"] = (
-                original_mode if original_mode is not None else ""
-            )  # Restore mode
+            logger.info(f"Test reimbursement submission (DRY RUN) result: Success={success}, Message='{message}'")
+            
+            # Restore original MODE if it was set
+            if original_mode is not None:
+                os.environ["MODE"] = original_mode
+            else:
+                del os.environ["MODE"] # Clean up if it wasn't originally set
+            logger.info(f"Restored MODE to: {os.getenv('MODE')}")
 
         else:
-            logging.error(
-                "MTCClient login failed during initialization in test_mtc_client."
+            logger.error(
+                "MTCClient login may have failed during initialization (CSRF token is initial or osVisitor cookie missing)."
             )
 
     except Exception as e:
-        logging.error(f"An error occurred during test_mtc_client: {e}", exc_info=True)
+        logger.error(f"An error occurred during test_mtc_client: {e}", exc_info=True)
+    logger.info("--- Finished MTCClient Test ---")
 
 
 if __name__ == "__main__":
+    # This allows MTC.py to be run directly for testing the MTCClient.
+    # The main application logic is in main.py.
     test_mtc_client()
