@@ -9,6 +9,15 @@ import time
 from MTC import MTCClient
 
 
+# MTC country mapping
+MTC_COUNTRY_MAPPING = {
+    'DE': 'D',
+    'CH': 'CH',
+    'IT': 'I',
+    'AT': 'A'
+}
+
+
 # Load environment variables
 load_dotenv()
 
@@ -296,6 +305,38 @@ class TeslaChargingAPI:
             
             # Process limited number of sessions
             for session in charging_data[:max_sessions]:
+                country_code = session.get('countryCode')
+
+                is_foreign = False
+                country_id = 'NL'
+
+                if country_code == 'NL':
+                    pass # Keep defaults
+                elif country_code in MTC_COUNTRY_MAPPING:
+                    is_foreign = True
+                    country_id = MTC_COUNTRY_MAPPING[country_code]
+                else:
+                    # Handle unknown country codes
+                    country_name = session.get('siteAddress', {}).get('country', country_code)
+                    print(f"\nWARNING: Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
+                    print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+
+                    while True:
+                        choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
+                        if choice == '1':
+                            is_foreign = False
+                            country_id = 'NL'
+                            logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
+                            break
+                        elif choice == '2':
+                            logging.info(f"User chose to skip invoice from '{country_name}'.")
+                            break
+                        else:
+                            print("Invalid input. Please enter 1 or 2.")
+
+                    if choice == '2':
+                        continue
+
                 processed_session = {
                     'datetime': session['chargeStartDateTime'],
                     'location': session['siteLocationName'],
@@ -303,7 +344,10 @@ class TeslaChargingAPI:
                     'kwh_charged': 0,
                     'total_price': 0,
                     'currency': None,
-                    'invoice_jpeg_base64': None
+                    'invoice_jpeg_base64': None,
+                    'countryCode': country_code,
+                    'isForeign': is_foreign,
+                    'countryId': country_id
                 }
                 
                 # Process fees

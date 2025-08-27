@@ -488,7 +488,7 @@ class MTCClient:
                             "Amount": f"{claim_data['total_price']:.2f}", # Format as string with 2 decimals
                             "DateTransaction": date_transaction_for_api, # UTC Z-formatted string
                             "Mileage": 0, # Number, not string
-                            "IsForeign": False, "CountryId": "NL", "IsReplacement": False,
+                            "IsForeign": claim_data["isForeign"], "CountryId": claim_data["countryId"], "IsReplacement": False,
                             "Quantity": str(claim_data["kwh_charged"]), # String
                             "Description": claim_data["chargeSessionId"], # This is used as ClaimNote by MTC
                             "ProductCode": "10" # For electricity
