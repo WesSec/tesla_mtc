@@ -469,9 +469,9 @@ class MTCClient:
 
                 # --- 2. Submit the new claim if not a duplicate ---
                 if os.getenv("MODE", "").upper() == "DRY":
-                    msg = (f"[DRY RUN] Would submit claim: Location='{claim_data['location']}', "
+                    msg = (f"[DRY RUN] Would submit claim: Location='{claim_data['location']}' ({claim_data.get('countryCode', 'N/A')}), "
                            f"Amount=€{claim_data['total_price']:.2f}, Date='{current_submission_dt.isoformat()}', "
-                           f"SessionID='{claim_data['chargeSessionId']}'")
+                           f"MTC Country='{claim_data['countryId']}', SessionID='{claim_data['chargeSessionId']}'")
                     logger.info(msg)
                     return True, msg # End here for DRY RUN
 

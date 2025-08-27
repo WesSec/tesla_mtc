@@ -7,6 +7,11 @@ from pdf2image import convert_from_bytes
 import logging
 import time
 from MTC import MTCClient
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
+
+# Suppress only the single warning from urllib3 about insecure requests
+urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # MTC country mapping
@@ -404,6 +409,7 @@ def main():
     )
     
     try:
+        logging.warning("SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.")
         logging.info("Starting Tesla charging session processing")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()
