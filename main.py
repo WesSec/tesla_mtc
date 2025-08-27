@@ -7,6 +7,7 @@ from pdf2image import convert_from_bytes
 import logging
 import time
 from MTC import MTCClient
+from util import Colors
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -409,7 +410,7 @@ def main():
     )
     
     try:
-        logging.warning("SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.")
+        logging.warning(f"{Colors.WARNING}SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.{Colors.ENDC}")
         logging.info("Starting Tesla charging session processing")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()
@@ -426,16 +427,23 @@ def main():
         
         # Process each session
         for session in sessions:
-            logging.info(f"Processing session: {session['location']} on {session['datetime']}, session ID: {session['chargeSessionId']}")
-            logging.info(f"Details: {session['kwh_charged']} kWh, €{session['total_price']}")
+            print(f"\n{Colors.HEADER}--- Processing Session ---{Colors.ENDC}")
+            logging.info(f"Location: {Colors.BOLD}{session['location']}{Colors.ENDC} on {session['datetime']}")
+            logging.info(f"Details:  {Colors.OKBLUE}{session['kwh_charged']:.3f} kWh, {session['currency']} {session['total_price']:.2f}{Colors.ENDC}")
             
             if not session.get('invoice_jpeg_base64'):
-                logging.warning(f"No invoice available for session at {session['location']}, skipping")
+                logging.warning(f"{Colors.WARNING}No invoice found, skipping.{Colors.ENDC}")
                 continue
-            
+
+            # MTCClient now returns colored messages
             success, message = mtc_client.submit_reimbursement(session)
-            if not success:
-                logging.warning(f"Failed to process session at {session['location']}, {message}")
+
+            # The message from the client is already colored and formatted.
+            # We just need to decide the log level based on success.
+            if success:
+                logging.info(message)
+            else:
+                logging.warning(message)
         
     except Exception as e:
         logging.error(f"Process failed: {str(e)}")

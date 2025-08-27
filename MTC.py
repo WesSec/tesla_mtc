@@ -22,6 +22,7 @@ from urllib.parse import unquote
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 import sys # Required for logging to stdout in test_mtc_client
+from util import Colors
 
 # For debugging purposes, can be removed or commented out in production
 # from requests_toolbelt.utils import dump
@@ -462,18 +463,16 @@ class MTCClient:
                 existing_transactions = transactions_data.get("data", {}).get("Transactions", {}).get("List", [])
                 for trx in existing_transactions:
                     if trx.get("ClaimNote") == claim_data["chargeSessionId"]:
-                        msg = (f"Duplicate claim found for session ID {claim_data['chargeSessionId']} "
-                               f"(Location: {claim_data['location']}). Skipping submission.")
-                        logger.info(msg)
+                        msg = (f"{Colors.WARNING}Duplicate claim found for session ID {claim_data['chargeSessionId']} "
+                               f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
                         return True, msg
 
                 # --- 2. Submit the new claim if not a duplicate ---
                 if os.getenv("MODE", "").upper() == "DRY":
-                    msg = (f"[DRY RUN] Would submit claim: Location='{claim_data['location']}' ({claim_data.get('countryCode', 'N/A')}), "
+                    msg = (f"{Colors.OKCYAN}[DRY RUN] Would submit claim: Location='{claim_data['location']}' ({claim_data.get('countryCode', 'N/A')}), "
                            f"Amount=€{claim_data['total_price']:.2f}, Date='{current_submission_dt.isoformat()}', "
-                           f"MTC Country='{claim_data['countryId']}', SessionID='{claim_data['chargeSessionId']}'")
-                    logger.info(msg)
-                    return True, msg # End here for DRY RUN
+                           f"MTC Country='{claim_data['countryId']}', SessionID='{claim_data['chargeSessionId']}'{Colors.ENDC}")
+                    return True, msg
 
                 # Prepare DateTransaction in UTC 'Z' format with milliseconds for the API
                 utc_submission_dt = current_submission_dt.astimezone(timezone.utc)
@@ -511,9 +510,8 @@ class MTCClient:
                 result = response.json()
 
                 if result.get("data", {}).get("Success"):
-                    msg = (f"Successfully submitted claim: Location='{claim_data['location']}', "
-                           f"Amount=€{claim_data['total_price']:.2f}, Submitted Date='{date_transaction_for_api}'")
-                    logger.info(msg)
+                    msg = (f"{Colors.OKGREEN}Successfully submitted claim: Location='{claim_data['location']}', "
+                           f"Amount=€{claim_data['total_price']:.2f}, Submitted Date='{date_transaction_for_api}'{Colors.ENDC}")
                     return True, msg
                 else:
                     error_message = result.get("data", {}).get("ErrorMessage", "Unknown error during submission.")
@@ -527,12 +525,12 @@ class MTCClient:
                             time.sleep(1) # Brief pause
                             continue # To the next iteration of the for loop (next attempt)
                         else:
-                            logger.error("Max attempts reached for daily limit retries. Submission failed.")
-                            return False, f"Failed after {max_attempts} attempts due to daily limit: {error_message}"
+                            final_msg = f"{Colors.FAIL}Failed after {max_attempts} attempts due to daily limit: {error_message}{Colors.ENDC}"
+                            return False, final_msg
                     else: # Non-daily-limit error
-                        logger.error(f"Claim submission failed: {error_message} (Date tried: {current_submission_dt.isoformat()})")
+                        final_msg = f"{Colors.FAIL}Claim submission failed: {error_message} (Date tried: {current_submission_dt.isoformat()}){Colors.ENDC}"
                         logger.debug(f"Full submission failure response: {result}")
-                        return False, f"Claim submission failed: {error_message}"
+                        return False, final_msg
             
             except requests.exceptions.RequestException as e:
                 logger.error(f"HTTP error on submission attempt {attempt_num + 1} for date {current_submission_dt.date()}: {e}")
