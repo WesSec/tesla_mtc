@@ -10,6 +10,8 @@ from MTC import MTCClient
 from util import Colors
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
+from tqdm import tqdm
+
 
 # Suppress only the single warning from urllib3 about insecure requests
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -310,7 +312,7 @@ class TeslaChargingAPI:
             max_sessions = int(os.getenv('MAX_SESSIONS', 1))
             
             # Process limited number of sessions
-            for session in charging_data[:max_sessions]:
+            for session in tqdm(charging_data[:max_sessions], desc="Pulling tesla information and invoices"):
                 country_code = session.get('countryCode')
 
                 is_foreign = False
