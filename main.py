@@ -431,7 +431,7 @@ def main():
         
         # Process each session
         for session in sessions:
-            print(f"\n{Colors.HEADER}--- Processing Session ---{Colors.ENDC}")
+            logging.info(f"\n{Colors.HEADER}--- Processing Session ---{Colors.ENDC}")
             logging.info(f"Location: {Colors.BOLD}{session['location']}{Colors.ENDC} on {session['datetime']}")
             logging.info(f"Details:  {Colors.OKBLUE}{session['kwh_charged']:.3f} kWh, {session['currency']} {session['total_price']:.2f}{Colors.ENDC}")
             
