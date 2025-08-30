@@ -19,10 +19,12 @@ urllib3.disable_warnings(InsecureRequestWarning)
 
 # MTC country mapping
 MTC_COUNTRY_MAPPING = {
-    'DE': 'D',
-    'CH': 'CH',
-    'IT': 'I',
-    'AT': 'A'
+    'DE': 'D', # Germany
+    'CH': 'CH', # Switzerland
+    'IT': 'I',  # Italy
+    'AT': 'A',   # Austria
+    'BE': 'B',   # Belgium
+    'FR': 'F'    # France
 }
 
 
