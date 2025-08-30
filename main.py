@@ -7,6 +7,25 @@ from pdf2image import convert_from_bytes
 import logging
 import time
 from MTC import MTCClient
+from util import Colors
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
+from tqdm import tqdm
+
+
+# Suppress only the single warning from urllib3 about insecure requests
+urllib3.disable_warnings(InsecureRequestWarning)
+
+
+# MTC country mapping
+MTC_COUNTRY_MAPPING = {
+    'DE': 'D', # Germany
+    'CH': 'CH', # Switzerland
+    'IT': 'I',  # Italy
+    'AT': 'A',   # Austria
+    'BE': 'B',   # Belgium
+    'FR': 'F'    # France
+}
 
 
 # Load environment variables
@@ -295,7 +314,39 @@ class TeslaChargingAPI:
             max_sessions = int(os.getenv('MAX_SESSIONS', 1))
             
             # Process limited number of sessions
-            for session in charging_data[:max_sessions]:
+            for session in tqdm(charging_data[:max_sessions], desc="Pulling tesla information and invoices"):
+                country_code = session.get('countryCode')
+
+                is_foreign = False
+                country_id = 'NL'
+
+                if country_code == 'NL':
+                    pass # Keep defaults
+                elif country_code in MTC_COUNTRY_MAPPING:
+                    is_foreign = True
+                    country_id = MTC_COUNTRY_MAPPING[country_code]
+                else:
+                    # Handle unknown country codes
+                    country_name = session.get('siteAddress', {}).get('country', country_code)
+                    print(f"\nWARNING: Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
+                    print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+
+                    while True:
+                        choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
+                        if choice == '1':
+                            is_foreign = False
+                            country_id = 'NL'
+                            logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
+                            break
+                        elif choice == '2':
+                            logging.info(f"User chose to skip invoice from '{country_name}'.")
+                            break
+                        else:
+                            print("Invalid input. Please enter 1 or 2.")
+
+                    if choice == '2':
+                        continue
+
                 processed_session = {
                     'datetime': session['chargeStartDateTime'],
                     'location': session['siteLocationName'],
@@ -303,7 +354,10 @@ class TeslaChargingAPI:
                     'kwh_charged': 0,
                     'total_price': 0,
                     'currency': None,
-                    'invoice_jpeg_base64': None
+                    'invoice_jpeg_base64': None,
+                    'countryCode': country_code,
+                    'isForeign': is_foreign,
+                    'countryId': country_id
                 }
                 
                 # Process fees
@@ -360,6 +414,7 @@ def main():
     )
     
     try:
+        logging.warning(f"{Colors.WARNING}SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.{Colors.ENDC}")
         logging.info("Starting Tesla charging session processing")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()
@@ -376,16 +431,23 @@ def main():
         
         # Process each session
         for session in sessions:
-            logging.info(f"Processing session: {session['location']} on {session['datetime']}, session ID: {session['chargeSessionId']}")
-            logging.info(f"Details: {session['kwh_charged']} kWh, €{session['total_price']}")
+            logging.info(f"\n{Colors.HEADER}--- Processing Session ---{Colors.ENDC}")
+            logging.info(f"Location: {Colors.BOLD}{session['location']}{Colors.ENDC} on {session['datetime']}")
+            logging.info(f"Details:  {Colors.OKBLUE}{session['kwh_charged']:.3f} kWh, {session['currency']} {session['total_price']:.2f}{Colors.ENDC}")
             
             if not session.get('invoice_jpeg_base64'):
-                logging.warning(f"No invoice available for session at {session['location']}, skipping")
+                logging.warning(f"{Colors.WARNING}No invoice found, skipping.{Colors.ENDC}")
                 continue
-            
+
+            # MTCClient now returns colored messages
             success, message = mtc_client.submit_reimbursement(session)
-            if not success:
-                logging.warning(f"Failed to process session at {session['location']}, {message}")
+
+            # The message from the client is already colored and formatted.
+            # We just need to decide the log level based on success.
+            if success:
+                logging.info(message)
+            else:
+                logging.warning(message)
         
     except Exception as e:
         logging.error(f"Process failed: {str(e)}")

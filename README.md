@@ -15,11 +15,11 @@ Never commit your `.env` file or share your:
 
 ## How It Works
 
-1. Fetches recent charging sessions from your Tesla account
-2. Processes charging data into MTC-compatible format
-3. Checks for duplicate submissions using charging session IDs
-4. Submits reimbursement claims with required documentation
-5. Handles session management and authentication for both APIs
+1. Fetches recent charging sessions from your Tesla account.
+2. Processes charging data, handling both Dutch and supported foreign country invoices.
+3. Checks for duplicate submissions in your MTC history to prevent re-submitting.
+4. For unknown countries, it prompts you to decide whether to submit as a Dutch invoice or skip.
+5. Submits reimbursement claims with the required invoice PDF attached.
 
 ## Setup
 
