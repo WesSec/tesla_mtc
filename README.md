@@ -65,11 +65,6 @@ The system includes error handling:
 - Checks for API-level errors in responses
 - Validates submissions before processing
 
-## Limitations
-
-- Only processes supercharging sessions
-- Currently supports Netherlands-based submissions (But does not check for it, my lease company does not mind the country in the submission)
-
 ## Troubleshooting
 
 If you encounter issues:
