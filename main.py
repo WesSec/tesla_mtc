@@ -24,7 +24,9 @@ MTC_COUNTRY_MAPPING = {
     'IT': 'I',  # Italy
     'AT': 'A',   # Austria
     'BE': 'B',   # Belgium
-    'FR': 'F'    # France
+    'FR': 'F',    # France
+    'SI': 'SLO',   # Slovenia
+    'HR': 'HR',   # Croatia
 }
 
 
