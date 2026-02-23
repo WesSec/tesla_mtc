@@ -461,9 +461,15 @@ class MTCClient:
                     return False, f"API error fetching transactions: {api_exception_msg}"
 
                 existing_transactions = transactions_data.get("data", {}).get("Transactions", {}).get("List", [])
+                session_id = claim_data["chargeSessionId"]
                 for trx in existing_transactions:
-                    if trx.get("ClaimNote") == claim_data["chargeSessionId"]:
-                        msg = (f"{Colors.WARNING}Duplicate claim found for session ID {claim_data['chargeSessionId']} "
+                    # Safely get both note fields and handle None types
+                    claim_note = str(trx.get("ClaimNote") or "")
+                    note = str(trx.get("Note") or "")
+                    
+                    # Check if the Tesla session ID exists anywhere in either field
+                    if session_id in claim_note or session_id in note:
+                        msg = (f"{Colors.WARNING}Duplicate claim found for session ID {session_id} "
                                f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
                         return True, msg
 

@@ -65,10 +65,10 @@ https://tesla-info.com/tesla-token.php
 
 ## Features
 
-- **Duplicate Detection**: Uses charging session IDs in the comment field to prevent duplicate submissions to MTC.
-- **Manual Override (Skip List)**: If you manually declared an invoice and want the script to ignore it, create a file named `skip.txt` in the root directory and paste the Tesla `chargeSessionId`s you want to ignore (one per line). The script will bypass them completely.
+- **Duplicate Detection**: Automatically checks both the `ClaimNote` (Toelichting) and `Note` (Notities) fields in your MTC transaction history for the Tesla charging session ID to prevent duplicate submissions. (Tip: If you manually declare an invoice, paste the Tesla Session ID into the MTC Note field to ensure the script ignores it!).
+- **Manual Override (Skip List)**: Create a `skip.txt` file in the root directory and paste the Tesla `chargeSessionId`s you want to ignore (one per line). The script will bypass them.
 - **Foreign Currency Handling**: Automatically detects and skips foreign currency invoices (e.g., GBP) to prevent incorrect EUR payouts, prompting you to declare them manually.
-- **Dry Run Mode**: Test the system without making actual submissions (set `MODE=DRY` in your `.env`).
+- **Dry Run Mode**: Test the system and view planned submissions without actually sending claims to MTC (set `MODE=DRY` in your `.env`).
 
 ## Error Handling
 
