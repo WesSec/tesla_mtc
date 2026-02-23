@@ -461,9 +461,29 @@ class MTCClient:
                     return False, f"API error fetching transactions: {api_exception_msg}"
 
                 existing_transactions = transactions_data.get("data", {}).get("Transactions", {}).get("List", [])
+                session_id = claim_data["chargeSessionId"]
                 for trx in existing_transactions:
-                    if trx.get("ClaimNote") == claim_data["chargeSessionId"]:
-                        msg = (f"{Colors.WARNING}Duplicate claim found for session ID {claim_data['chargeSessionId']} "
+                    # Safely get the notes and handle None types
+                    claim_note = str(trx.get("ClaimNote") or "").strip()
+                    note = str(trx.get("Note") or "").strip()
+                    
+                    # 1. Check if the session ID is in either field 
+                    is_duplicate_id = (session_id in claim_note) or (session_id in note)
+                    
+                    # 2. Check for a simple, typo-proof manual skip tag (case-insensitive)
+                    skip_keywords = ["skip", "skip-mtc"]
+                    claim_note_lower = claim_note.lower()
+                    note_lower = note.lower()
+                    
+                    is_manual_skip = any(kw in claim_note_lower or kw in note_lower for kw in skip_keywords)
+
+                    if is_duplicate_id:
+                        msg = (f"{Colors.WARNING}Duplicate claim found for session ID {session_id} "
+                               f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
+                        return True, msg
+                    
+                    if is_manual_skip:
+                        msg = (f"{Colors.WARNING}Manual skip tag found in MTC notes for session ID {session_id} "
                                f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
                         return True, msg
 
