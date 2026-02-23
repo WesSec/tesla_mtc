@@ -309,12 +309,29 @@ class TeslaChargingAPI:
                 logging.error("Invalid response format")
                 return []
             
+            # Import skiplist check
+            skip_file_path = os.path.join(os.path.dirname(__file__), 'skip.txt')
+            skip_list = set()
+            
+            if os.path.exists(skip_file_path):
+                with open(skip_file_path, 'r', encoding='utf-8') as f:
+                    # Read lines, strip whitespace, ignore empty lines and comments
+                    skip_list = {line.strip() for line in f if line.strip() and not line.startswith('#')}
+                logging.info(f"Loaded {len(skip_list)} session IDs to skip from skip.txt.")
+            else:
+                logging.debug("No skip.txt found. Proceeding without a manual skip list.")
+            
             sessions = []
             charging_data = history['data']['me']['charging']['historyV2']['data']
             max_sessions = int(os.getenv('MAX_SESSIONS', 1))
             
             # Process limited number of sessions
             for session in tqdm(charging_data[:max_sessions], desc="Pulling tesla information and invoices"):
+                # Check session ID against skip list
+                session_id = session.get('chargeSessionId')
+                if session_id in skip_list:
+                    logging.info(f"Session {session_id} found in skip.txt. Bypassing entirely.")
+                    continue
                 country_code = session.get('countryCode')
 
                 is_foreign = False

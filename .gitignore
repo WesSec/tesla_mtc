@@ -1,13 +1,14 @@
-// Dev files
+# Dev files
 conntest.py
 login.py
 mainual.py
 test.zip
 tmp.py
 .env
-// User files
+# User files
 submitted/*
 extracted_pdfs/*
+skip.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,windows,venv
 # Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,python,windows,venv
