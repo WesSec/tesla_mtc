@@ -328,24 +328,40 @@ class TeslaChargingAPI:
                 else:
                     # Handle unknown country codes
                     country_name = session.get('siteAddress', {}).get('country', country_code)
-                    print(f"\nWARNING: Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
-                    print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+                    logging.warning(f"Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
+                    
+                    action = os.getenv('UNKNOWN_COUNTRY_ACTION', 'PROMPT').upper()
 
-                    while True:
-                        choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
-                        if choice == '1':
-                            is_foreign = False
-                            country_id = 'NL'
-                            logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
-                            break
-                        elif choice == '2':
-                            logging.info(f"User chose to skip invoice from '{country_name}'.")
-                            break
-                        else:
-                            print("Invalid input. Please enter 1 or 2.")
-
-                    if choice == '2':
+                    if action == 'SKIP':
+                        logging.info(f"Auto-skipping invoice from '{country_name}' due to UNKNOWN_COUNTRY_ACTION=SKIP.")
                         continue
+                    elif action == 'DUTCH':
+                        is_foreign = False
+                        country_id = 'NL'
+                        logging.info(f"Auto-processing invoice from '{country_name}' as a Dutch invoice due to UNKNOWN_COUNTRY_ACTION=DUTCH.")
+                    else:
+                        # Fallback to PROMPT
+                        try:
+                            print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+                            while True:
+                                choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
+                                if choice == '1':
+                                    is_foreign = False
+                                    country_id = 'NL'
+                                    logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
+                                    break
+                                elif choice == '2':
+                                    logging.info(f"User chose to skip invoice from '{country_name}'.")
+                                    break
+                                else:
+                                    print("Invalid input. Please enter 1 or 2.")
+                            
+                            if choice == '2':
+                                continue
+                        except EOFError:
+                            logging.error(f"No interactive terminal found. Auto-skipping invoice from '{country_name}'.")
+                            logging.info("Tip: Set UNKNOWN_COUNTRY_ACTION=SKIP in your .env file to suppress this error.")
+                            continue
 
                 processed_session = {
                     'datetime': session['chargeStartDateTime'],
