@@ -5,7 +5,9 @@ Automatically submit Tesla charging sessions to MultiTankCard (MTC) for reimburs
 ⚠️ **Use at your own risk:** Wrongfully submitting reimbursements could be seen and punished as fraud. Always verify that submissions match your actual charging sessions. ⚠️
 
 ### Security Notice
+
 Never commit your `.env` file or share your:
+
 - Tesla refresh token/credentials
 - MTC credentials
 - IBAN number 
@@ -27,6 +29,7 @@ Never commit your `.env` file or share your:
 2. Copy `.env.example` to `.env`
 3. Fill in your credentials and preferences in `.env`
 4. Install required packages:
+
    ```bash
    pip install -r requirements.txt
    sudo apt install poppler-utils
@@ -35,6 +38,7 @@ Never commit your `.env` file or share your:
 ## Environment Variables
 
 ### Required Settings
+
 - `TESLA_VIN`: Your Tesla vehicle identification number
 - `TESLA_REFRESH_TOKEN`: Tesla API refresh token (see below)
 - `IBAN`: Your bank account number for reimbursement payouts
@@ -49,6 +53,11 @@ Never commit your `.env` file or share your:
 - `DEVICE_COUNTRY`: Country code (default: NL)
 - `DEVICE_LANGUAGE`: Language code (default: nl)
 - `TTP_LOCALE`: Locale setting (default: nl_NL)
+- `UNKNOWN_COUNTRY_ACTION`: How to handle invoices from unknown countries. Use `SKIP` for automated/NAS environments, `PROMPT` for interactive, or `DUTCH` to force as local (default: PROMPT).
+
+## ⚠️ Notice on Foreign Currencies
+
+This tool automatically skips charging sessions billed in currencies other than Euros (EUR) (e.g., GBP in the UK). Because MTC processes all claims as EUR, submitting foreign currencies leads to incorrect payouts. These invoices must be converted and declared manually.
 
 ## Getting Your Tesla Refresh Token
 
@@ -56,8 +65,10 @@ https://tesla-info.com/tesla-token.php
 
 ## Features
 
-- **Duplicate Detection**: Uses charging session IDs in the comment field to prevent duplicate submissions
-- **Dry Run Mode**: Test the system without making actual submissions
+- **Duplicate Detection**: Automatically checks both the `ClaimNote` (Toelichting) and `Note` (Notities) fields in your MTC transaction history for the Tesla charging session ID to prevent duplicate submissions. (Tip: If you manually declare an invoice, paste the Tesla Session ID into the MTC Note field to ensure the script ignores it!).
+- **Manual Override (Skip List)**: Create a `skip.txt` file in the root directory and paste the Tesla `chargeSessionId`s you want to ignore (one per line). The script will bypass them.
+- **Foreign Currency Handling**: Automatically detects and skips foreign currency invoices (e.g., GBP) to prevent incorrect EUR payouts, prompting you to declare them manually.
+- **Dry Run Mode**: Test the system and view planned submissions without actually sending claims to MTC (set `MODE=DRY` in your `.env`).
 
 ## Error Handling
 

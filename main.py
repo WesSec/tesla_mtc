@@ -24,7 +24,9 @@ MTC_COUNTRY_MAPPING = {
     'IT': 'I',  # Italy
     'AT': 'A',   # Austria
     'BE': 'B',   # Belgium
-    'FR': 'F'    # France
+    'FR': 'F',    # France
+    'SI': 'SLO',   # Slovenia
+    'HR': 'HR',   # Croatia
 }
 
 
@@ -309,12 +311,29 @@ class TeslaChargingAPI:
                 logging.error("Invalid response format")
                 return []
             
+            # Import skiplist check
+            skip_file_path = os.path.join(os.path.dirname(__file__), 'skip.txt')
+            skip_list = set()
+            
+            if os.path.exists(skip_file_path):
+                with open(skip_file_path, 'r', encoding='utf-8') as f:
+                    # Read lines, strip whitespace, ignore empty lines and comments
+                    skip_list = {line.strip() for line in f if line.strip() and not line.startswith('#')}
+                logging.info(f"Loaded {len(skip_list)} session IDs to skip from skip.txt.")
+            else:
+                logging.debug("No skip.txt found. Proceeding without a manual skip list.")
+            
             sessions = []
             charging_data = history['data']['me']['charging']['historyV2']['data']
             max_sessions = int(os.getenv('MAX_SESSIONS', 1))
             
             # Process limited number of sessions
             for session in tqdm(charging_data[:max_sessions], desc="Pulling tesla information and invoices"):
+                # Check session ID against skip list
+                session_id = session.get('chargeSessionId')
+                if session_id in skip_list:
+                    logging.info(f"Session {session_id} found in skip.txt. Bypassing entirely.")
+                    continue
                 country_code = session.get('countryCode')
 
                 is_foreign = False
@@ -328,24 +347,40 @@ class TeslaChargingAPI:
                 else:
                     # Handle unknown country codes
                     country_name = session.get('siteAddress', {}).get('country', country_code)
-                    print(f"\nWARNING: Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
-                    print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+                    logging.warning(f"Invoice found for country '{country_name}' ({country_code}), but a mapping to an MTC country code is not configured.")
+                    
+                    action = os.getenv('UNKNOWN_COUNTRY_ACTION', 'PROMPT').upper()
 
-                    while True:
-                        choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
-                        if choice == '1':
-                            is_foreign = False
-                            country_id = 'NL'
-                            logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
-                            break
-                        elif choice == '2':
-                            logging.info(f"User chose to skip invoice from '{country_name}'.")
-                            break
-                        else:
-                            print("Invalid input. Please enter 1 or 2.")
-
-                    if choice == '2':
+                    if action == 'SKIP':
+                        logging.info(f"Auto-skipping invoice from '{country_name}' due to UNKNOWN_COUNTRY_ACTION=SKIP.")
                         continue
+                    elif action == 'DUTCH':
+                        is_foreign = False
+                        country_id = 'NL'
+                        logging.info(f"Auto-processing invoice from '{country_name}' as a Dutch invoice due to UNKNOWN_COUNTRY_ACTION=DUTCH.")
+                    else:
+                        # Fallback to PROMPT
+                        try:
+                            print("To add support, please open a GitHub issue at: https://github.com/WesSec/tesla_mtc/issues")
+                            while True:
+                                choice = input("Would you like to:\n  (1) Reimburse this as a Dutch invoice\n  (2) Skip this invoice\nEnter your choice (1 or 2): ")
+                                if choice == '1':
+                                    is_foreign = False
+                                    country_id = 'NL'
+                                    logging.info(f"User chose to process invoice from '{country_name}' as a Dutch invoice.")
+                                    break
+                                elif choice == '2':
+                                    logging.info(f"User chose to skip invoice from '{country_name}'.")
+                                    break
+                                else:
+                                    print("Invalid input. Please enter 1 or 2.")
+                            
+                            if choice == '2':
+                                continue
+                        except EOFError:
+                            logging.error(f"No interactive terminal found. Auto-skipping invoice from '{country_name}'.")
+                            logging.info("Tip: Set UNKNOWN_COUNTRY_ACTION=SKIP in your .env file to suppress this error.")
+                            continue
 
                 processed_session = {
                     'datetime': session['chargeStartDateTime'],
@@ -367,6 +402,12 @@ class TeslaChargingAPI:
                             processed_session['kwh_charged'] = fee.get('usageBase', 0)
                             processed_session['total_price'] = fee.get('totalDue', 0)
                             processed_session['currency'] = fee.get('currencyCode')
+                
+                currency = processed_session.get('currency')
+                if currency and currency.upper() != 'EUR' and processed_session.get('total_price', 0) > 0:
+                    logging.warning(f"Skipping invoice from {session.get('siteLocationName')}: Currency is {currency}, but MTC requires EUR.")
+                    logging.info("Please calculate the exchange rate and submit this claim manually to MTC.")
+                    continue
                 
                 # Process invoice if available
                 if session.get('invoices'):
