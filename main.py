@@ -368,6 +368,12 @@ class TeslaChargingAPI:
                             processed_session['total_price'] = fee.get('totalDue', 0)
                             processed_session['currency'] = fee.get('currencyCode')
                 
+                currency = processed_session.get('currency')
+                if currency and currency.upper() != 'EUR' and processed_session.get('total_price', 0) > 0:
+                    logging.warning(f"Skipping invoice from {session.get('siteLocationName')}: Currency is {currency}, but MTC requires EUR.")
+                    logging.info("Please calculate the exchange rate and submit this claim manually to MTC.")
+                    continue
+                
                 # Process invoice if available
                 if session.get('invoices'):
                     for invoice in session['invoices']:
