@@ -1,5 +1,8 @@
 # Tesla MTC Integration
 
+> **⚠️ UNMAINTAINED: LOOKING FOR MAINTAINERS & TESTERS**
+> I have recently switched charging providers and can no longer test or maintain this code. I am currently looking for someone to take over maintenance. If you are interested in maintaining this project or helping test PRs, please open an issue! Otherwise, this repository will be archived in the near future.
+
 Automatically submit Tesla charging sessions to MultiTankCard (MTC) for reimbursement. This tool integrates with both Tesla's API to fetch your charging sessions and MTC's reimbursement system to automate the submission process.
 
 ⚠️ **Use at your own risk:** Wrongfully submitting reimbursements could be seen and punished as fraud. Always verify that submissions match your actual charging sessions. ⚠️
