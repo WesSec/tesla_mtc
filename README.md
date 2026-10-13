@@ -54,6 +54,9 @@ Never commit your `.env` file or share your:
 - `DEVICE_LANGUAGE`: Language code (default: nl)
 - `TTP_LOCALE`: Locale setting (default: nl_NL)
 - `UNKNOWN_COUNTRY_ACTION`: How to handle invoices from unknown countries. Use `SKIP` for automated/NAS environments, `PROMPT` for interactive, or `DUTCH` to force as local (default: PROMPT).
+- `LOOKBACK_PERIOD`: Months of MTC history searched for earlier claims (default: 6). The check always reaches back far enough to cover the session being processed.
+- `MTC_MAX_RECORDS`: Maximum number of MTC transactions fetched for the duplicate check (default: 500). MTC returns the newest first, so this must cover your whole `LOOKBACK_PERIOD`; a warning is logged when the maximum is reached.
+- `MAX_SESSION_AGE_DAYS`: Sessions older than this are never submitted automatically, only reported, because MTC claims cannot be withdrawn (default: 60, `0` disables the limit).
 
 ## ⚠️ Notice on Foreign Currencies
 
@@ -69,6 +72,10 @@ https://tesla-info.com/tesla-token.php
 - **Manual Override (Skip List)**: Create a `skip.txt` file in the root directory and paste the Tesla `chargeSessionId`s you want to ignore (one per line). The script will bypass them.
 - **Foreign Currency Handling**: Automatically detects and skips foreign currency invoices (e.g., GBP) to prevent incorrect EUR payouts, prompting you to declare them manually.
 - **Dry Run Mode**: Test the system and view planned submissions without actually sending claims to MTC (set `MODE=DRY` in your `.env`).
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org). The current version is in `version.py`, is logged at startup, and every release is tagged as `v<version>` with its changes listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Error Handling
 
