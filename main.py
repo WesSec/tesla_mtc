@@ -8,6 +8,7 @@ import logging
 import time
 from MTC import MTCClient
 from util import Colors
+from version import __version__
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 from tqdm import tqdm
@@ -456,7 +457,7 @@ def main():
     
     try:
         logging.warning(f"{Colors.WARNING}SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.{Colors.ENDC}")
-        logging.info("Starting Tesla charging session processing")
+        logging.info(f"Starting Tesla charging session processing (tesla_mtc {__version__})")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()
         

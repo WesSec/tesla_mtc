@@ -61,6 +61,10 @@ API_PATTERNS: Dict[str, Tuple[str, str]] = {
 # and is required for the first few calls before a dynamic token is issued post-login.
 INITIAL_CSRF_TOKEN: str = "T6C+9iB49TLra4jEsMeSckDMNhQ="
 
+# MTC's daily claim limit can move a claim a few days before its charging session,
+# so the duplicate check always looks back at least this far before the session.
+CLAIM_DATE_MARGIN_DAYS: int = 7
+
 
 class MTCClient:
     """
@@ -115,6 +119,26 @@ class MTCClient:
                 "Invalid LOOKBACK_PERIOD in .env (must be an integer). Defaulting to 6 months."
             )
             self.lookback_period_months = 6
+
+        # MTC returns the most recent transactions first, so this must cover the whole
+        # lookback period; otherwise older claims are missed and submitted again.
+        try:
+            self.max_transaction_records: int = max(int(os.getenv("MTC_MAX_RECORDS", "500")), 1)
+        except ValueError:
+            logger.warning(
+                "Invalid MTC_MAX_RECORDS in .env (must be an integer). Defaulting to 500."
+            )
+            self.max_transaction_records = 500
+
+        # Older sessions are never submitted automatically: MTC claims cannot be withdrawn,
+        # and old sessions are the ones most likely claimed by hand already. 0 disables this.
+        try:
+            self.max_session_age_days: int = max(int(os.getenv("MAX_SESSION_AGE_DAYS", "60")), 0)
+        except ValueError:
+            logger.warning(
+                "Invalid MAX_SESSION_AGE_DAYS in .env (must be an integer). Defaulting to 60 days."
+            )
+            self.max_session_age_days = 60
 
         if not self.username or not self.password:
             logger.critical(
@@ -424,6 +448,12 @@ class MTCClient:
                     first_of_current_month = start_dt_lookback.replace(day=1)
                     start_dt_lookback = first_of_current_month - timedelta(days=1)
                     start_dt_lookback = start_dt_lookback.replace(day=1)
+                # Never stop short of the session itself: a session older than LOOKBACK_PERIOD
+                # would otherwise not be recognised as claimed and be submitted again.
+                session_lookback = (original_claim_dt.astimezone(timezone.utc)
+                                    - timedelta(days=CLAIM_DATE_MARGIN_DAYS)).replace(
+                                        hour=0, minute=0, second=0, microsecond=0)
+                start_dt_lookback = min(start_dt_lookback, session_lookback)
 
                 start_date_filter_api_str = start_dt_lookback.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                 end_date_filter_api_str = now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
@@ -436,7 +466,7 @@ class MTCClient:
                     "screenData": {"variables": {
                         "ShowSharePopup": False,
                         "InputParameterString": f"{input_param_start_api_str}|{input_param_end_api_str}|0",
-                        "MaxRecords": 50, "IsFirstLoad": True, "IsLoadMore": False,
+                        "MaxRecords": self.max_transaction_records, "IsFirstLoad": True, "IsLoadMore": False,
                         "PopupValues": {"IconClassName":"","Title":"","Content":"","ButtonText":"","ButtonEventPayload":"","AlternativeLinkText":"","AlternativeLinkPayload":"","SecondAlternativeText":"","SecondAlternativeLinkPayload":""},
                         "IsShowNoClaimsPopup": False,
                         "TransactionTypeIdCurrentFilter": "", "_transactionTypeIdCurrentFilterInDataFetchStatus": 1,
@@ -461,6 +491,15 @@ class MTCClient:
                     return False, f"API error fetching transactions: {api_exception_msg}"
 
                 existing_transactions = transactions_data.get("data", {}).get("Transactions", {}).get("List", [])
+                logger.info(
+                    f"Checking {len(existing_transactions)} MTC transactions since "
+                    f"{start_dt_lookback.date()} for duplicates."
+                )
+                if len(existing_transactions) >= self.max_transaction_records:
+                    logger.warning(
+                        f"MTC returned the maximum of {self.max_transaction_records} transactions, so "
+                        f"older claims may be missing from the duplicate check. Raise MTC_MAX_RECORDS."
+                    )
                 session_id = claim_data["chargeSessionId"]
                 for trx in existing_transactions:
                     # Safely get both note fields and handle None types
@@ -472,6 +511,14 @@ class MTCClient:
                         msg = (f"{Colors.WARNING}Duplicate claim found for session ID {session_id} "
                                f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
                         return True, msg
+
+                age_days = (now_utc - original_claim_dt.astimezone(timezone.utc)).days
+                if self.max_session_age_days and age_days > self.max_session_age_days:
+                    msg = (f"{Colors.WARNING}Not submitted automatically: session {session_id} "
+                           f"(Location: {claim_data['location']}) is {age_days} days old, more than "
+                           f"MAX_SESSION_AGE_DAYS={self.max_session_age_days}. Check MTC and submit by "
+                           f"hand if it was not claimed yet.{Colors.ENDC}")
+                    return False, msg
 
                 # --- 2. Submit the new claim if not a duplicate ---
                 if os.getenv("MODE", "").upper() == "DRY":
