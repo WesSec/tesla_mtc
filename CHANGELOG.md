@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-10-13
 
 ### Added
 - Version number (`version.py`), logged at startup.
@@ -12,6 +12,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
   only reported, since MTC claims cannot be withdrawn. Set to `0` to disable.
 - Log line with the number of MTC transactions and the start date used for the
   duplicate check.
+
+### Changed
+- Added Jochem Pieper as copyright holder in the MIT License.
 
 ### Fixed
 - Only the 50 most recent MTC transactions were used for the duplicate check, so with
@@ -26,3 +29,6 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 Baseline: the state of the project when maintenance moved to @Jochemp88
 (commit `0df93ae`).
+
+[1.1.0]: https://github.com/WesSec/tesla_mtc/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/WesSec/tesla_mtc/releases/tag/v1.0.0
