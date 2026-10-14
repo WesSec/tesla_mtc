@@ -15,6 +15,8 @@ Never commit your `.env` file or share your:
 - IBAN number 
 - Vehicle VIN
 
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/jochemp88) 
+
 ## How It Works
 
 1. Fetches recent charging sessions from your Tesla account.
