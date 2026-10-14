@@ -80,7 +80,7 @@ See **[docs/web-runner.md](docs/web-runner.md)** for the full setup (including S
 - `TTP_LOCALE`: Locale setting (default: nl_NL)
 - `UNKNOWN_COUNTRY_ACTION`: How to handle invoices from unknown countries. Use `SKIP` for automated/NAS environments, `PROMPT` for interactive, or `DUTCH` to force as local (default: PROMPT).
 - `LOOKBACK_PERIOD`: Months of MTC history searched for earlier claims (default: 6). The check always reaches back far enough to cover the session being processed.
-- `MTC_MAX_RECORDS`: Maximum number of MTC transactions fetched for the duplicate check (default: 500). MTC returns the newest first, so this must cover your whole `LOOKBACK_PERIOD`; a warning is logged when the maximum is reached.
+- `MTC_MAX_RECORDS`: Maximum number of MTC transactions fetched for the duplicate check (default: 400). MTC returns exactly this many, newest first, without pagination, so it must cover your whole `LOOKBACK_PERIOD`. When the maximum is reached, a warning is logged and sessions older than the oldest returned transaction are reported instead of submitted.
 - `MAX_SESSION_AGE_DAYS`: Sessions older than this are never submitted automatically, only reported, because MTC claims cannot be withdrawn (default: 60, `0` disables the limit).
 
 ## ⚠️ Notice on Foreign Currencies
