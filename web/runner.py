@@ -11,6 +11,7 @@ POST /run?mode=LIVE -> actually submit claims (only when RUNNER_ALLOW_LIVE=true)
 GET  /status        -> JSON with status and summary (handy for Home Assistant)
 GET  /logo/mtc      -> optional MTC logo: put mtc-logo.svg/png/webp next to this file
 """
+import hmac
 import html
 import json
 import os
@@ -664,19 +665,43 @@ def render(snap, lang, picked):
             + "".join(parts) + "</main></body></html>")
 
 
+COOKIE_ATTRS = "Max-Age=31536000; Path=/; SameSite=Lax; HttpOnly"
+# Fixed header values, so nothing from the request ends up in a response header
+LANG_COOKIES = {code: f"lang={code}; {COOKIE_ATTRS}" for code in LANGS}
+SECURITY_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Content-Security-Policy", "frame-ancestors 'none'"),
+    ("Referrer-Policy", "no-referrer"),
+)
+MAX_BODY = 1024
+
+
 class Handler(BaseHTTPRequestHandler):
     def _authorized(self):
         if not TOKEN:
             return True
         token = parse_qs(urlparse(self.path).query).get("token", [""])[0]
-        return token == TOKEN or self.headers.get("Authorization") == f"Bearer {TOKEN}"
+        bearer = self.headers.get("Authorization", "")
+        return (hmac.compare_digest(token.encode(), TOKEN.encode())
+                or hmac.compare_digest(bearer.encode(), f"Bearer {TOKEN}".encode()))
+
+    def _same_origin(self):
+        """Rejects form posts from other websites (CSRF). Clients without these
+        browser headers, such as Home Assistant or curl, are allowed."""
+        fetch_site = self.headers.get("Sec-Fetch-Site")
+        if fetch_site:  # sent by all current browsers, also correct behind a reverse proxy
+            return fetch_site in ("same-origin", "none")
+        origin = self.headers.get("Origin")
+        hosts = {self.headers.get("Host", ""), self.headers.get("X-Forwarded-Host", "")}
+        return not origin or urlparse(origin).netloc in hosts
 
     def _send(self, code, body, ctype="text/html; charset=utf-8", headers=()):
         data = body if isinstance(body, bytes) else body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        for name, value in headers:
+        for name, value in (*SECURITY_HEADERS, *headers):
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
@@ -713,8 +738,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, "Not found")
         query_lang = parse_qs(url.query).get("lang", [""])[0].lower()
         lang = pick_lang(query_lang, self._cookie("lang"), self.headers.get("Accept-Language"))
-        headers = ([("Set-Cookie", f"lang={lang}; Max-Age=31536000; Path=/; SameSite=Lax")]
-                   if query_lang in LANGS else [])
+        headers = [("Set-Cookie", LANG_COOKIES[query_lang])] if query_lang in LANG_COOKIES else []
         self._send(200, render(self._snapshot(), lang, self._picked_sessions()), headers=headers)
 
     def do_POST(self):
@@ -723,7 +747,15 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path != "/run":
             return self._send(404, "Not found")
-        length = int(self.headers.get("Content-Length") or 0)
+        if not self._same_origin():
+            return self._send(403, json.dumps({"error": "cross-site request refused"}),
+                              "application/json")
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= MAX_BODY:
+            return self._send(413, json.dumps({"error": "request body too large"}), "application/json")
         params = parse_qs(self.rfile.read(length).decode("utf-8", "replace") if length else "")
         params.update(parse_qs(url.query))
         mode = params.get("mode", ["DRY"])[0].upper()
@@ -742,8 +774,9 @@ class Handler(BaseHTTPRequestHandler):
         if "text/html" in self.headers.get("Accept", ""):
             self.send_response(303)
             self.send_header("Location", "/" + (f"?token={TOKEN}" if TOKEN else ""))
-            self.send_header("Set-Cookie",
-                             f"sessions={sessions}; Max-Age=31536000; Path=/; SameSite=Lax")
+            self.send_header("Set-Cookie", f"sessions={sessions}; {COOKIE_ATTRS}")
+            for name, value in SECURITY_HEADERS:
+                self.send_header(name, value)
             self.end_headers()
         else:
             self._send(202 if started else 409,

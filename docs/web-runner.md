@@ -180,6 +180,11 @@ A custom MTC logo can be shown in the header: place `mtc-logo.svg`, `.png` or `.
 
 The page can submit claims in your name. **Do not open it to the internet** through port forwarding. Use a VPN to your home network instead (WireGuard, Tailscale, or your router's or NAS's VPN), and add a `RUNNER_TOKEN` for extra protection.
 
+Built-in protection:
+- **Requests from other websites are refused.** A page you visit elsewhere cannot start a run through your browser. Home Assistant and other direct API calls are not affected.
+- **The page cannot be embedded** in another site's frame.
+- **The token is compared in constant time** and never written to a log.
+
 On your phone, open the page and choose *Add to Home screen* for an app-like icon.
 
 ## Home Assistant

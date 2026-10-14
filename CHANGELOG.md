@@ -11,7 +11,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
   Home Assistant, test run first and submit after a confirmation, a formatted result
   per charging session, choice of how many recent sessions to check, English and Dutch,
   light and dark mode, and a `/status` JSON endpoint. Submitting stays off until
-  `RUNNER_ALLOW_LIVE=true`. See `docs/web-runner.md`.
+  `RUNNER_ALLOW_LIVE=true`. Requests from other websites are refused (CSRF), the
+  page cannot be framed, and the optional `RUNNER_TOKEN` is compared in constant time.
+  See `docs/web-runner.md`.
 - `Dockerfile`, `.dockerignore` and `docker-compose.example.yml`. The container keeps
   running between runs instead of stopping after each one.
 - Documentation with setup instructions (Docker Compose, Synology Container Manager,
