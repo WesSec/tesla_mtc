@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - Unreleased
+
+### Changed
+- `MTC_MAX_RECORDS` defaults to 400 (was 500). Measured against MTC: the transaction list
+  returns exactly `MaxRecords` items, newest first, without pagination, verified up to 473.
+  The default stays inside that range, so a cut-off list is always recognisable.
+
+### Fixed
+- When MTC returns the maximum number of transactions, the list may have been cut off
+  before an older claim. Sessions older than the oldest returned transaction are now
+  reported ("could not be checked for duplicates") instead of submitted.
+
 ## [1.1.0] - 2026-10-13
 
 ### Added
@@ -30,5 +42,6 @@ and this project follows [Semantic Versioning](https://semver.org/).
 Baseline: the state of the project when maintenance moved to @Jochemp88
 (commit `0df93ae`).
 
+[1.1.1]: https://github.com/WesSec/tesla_mtc/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/WesSec/tesla_mtc/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/WesSec/tesla_mtc/releases/tag/v1.0.0

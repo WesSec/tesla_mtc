@@ -17,7 +17,7 @@ import requests
 import time
 import logging
 import re
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, Optional
 from urllib.parse import unquote
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
@@ -64,6 +64,20 @@ INITIAL_CSRF_TOKEN: str = "T6C+9iB49TLra4jEsMeSckDMNhQ="
 # MTC's daily claim limit can move a claim a few days before its charging session,
 # so the duplicate check always looks back at least this far before the session.
 CLAIM_DATE_MARGIN_DAYS: int = 7
+
+DEFAULT_MAX_RECORDS: int = 400
+
+
+def _oldest_transaction_date(transactions: list) -> Optional[datetime]:
+    """Returns the oldest `DateTransaction` in the list, or None if none can be read."""
+    dates = []
+    for trx in transactions:
+        try:
+            parsed = datetime.fromisoformat(str(trx.get("DateTransaction")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        dates.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc))
+    return min(dates) if dates else None
 
 
 class MTCClient:
@@ -120,15 +134,17 @@ class MTCClient:
             )
             self.lookback_period_months = 6
 
-        # MTC returns the most recent transactions first, so this must cover the whole
-        # lookback period; otherwise older claims are missed and submitted again.
+        # MTC returns exactly MaxRecords transactions, newest first, without pagination
+        # (measured up to 473). The default stays below that measured range, so a cut-off
+        # list is always recognisable: it then holds exactly this many transactions.
         try:
-            self.max_transaction_records: int = max(int(os.getenv("MTC_MAX_RECORDS", "500")), 1)
+            self.max_transaction_records: int = max(
+                int(os.getenv("MTC_MAX_RECORDS", str(DEFAULT_MAX_RECORDS))), 1)
         except ValueError:
             logger.warning(
-                "Invalid MTC_MAX_RECORDS in .env (must be an integer). Defaulting to 500."
+                f"Invalid MTC_MAX_RECORDS in .env (must be an integer). Defaulting to {DEFAULT_MAX_RECORDS}."
             )
-            self.max_transaction_records = 500
+            self.max_transaction_records = DEFAULT_MAX_RECORDS
 
         # Older sessions are never submitted automatically: MTC claims cannot be withdrawn,
         # and old sessions are the ones most likely claimed by hand already. 0 disables this.
@@ -495,10 +511,13 @@ class MTCClient:
                     f"Checking {len(existing_transactions)} MTC transactions since "
                     f"{start_dt_lookback.date()} for duplicates."
                 )
-                if len(existing_transactions) >= self.max_transaction_records:
+                list_is_full = len(existing_transactions) >= self.max_transaction_records
+                if list_is_full:
                     logger.warning(
                         f"MTC returned the maximum of {self.max_transaction_records} transactions, so "
-                        f"older claims may be missing from the duplicate check. Raise MTC_MAX_RECORDS."
+                        f"older claims may be missing from the duplicate check. Sessions older than the "
+                        f"oldest returned transaction are not submitted. Raise MTC_MAX_RECORDS or lower "
+                        f"LOOKBACK_PERIOD."
                     )
                 session_id = claim_data["chargeSessionId"]
                 for trx in existing_transactions:
@@ -511,6 +530,20 @@ class MTCClient:
                         msg = (f"{Colors.WARNING}Duplicate claim found for session ID {session_id} "
                                f"(Location: {claim_data['location']}). Skipping submission.{Colors.ENDC}")
                         return True, msg
+
+                # A full list may have been cut off before this session's claim: the newest
+                # transactions come first, so only claims older than the oldest one can be missing.
+                if list_is_full:
+                    oldest = _oldest_transaction_date(existing_transactions)
+                    earliest_claim = original_claim_dt - timedelta(days=CLAIM_DATE_MARGIN_DAYS)
+                    if oldest is None or oldest > earliest_claim:
+                        oldest_text = oldest.date().isoformat() if oldest else "unknown"
+                        msg = (f"{Colors.WARNING}Not submitted automatically: session {session_id} "
+                               f"(Location: {claim_data['location']}) could not be checked for duplicates, "
+                               f"because MTC returned the maximum of {self.max_transaction_records} "
+                               f"transactions and the oldest is from {oldest_text}. Raise MTC_MAX_RECORDS "
+                               f"or lower LOOKBACK_PERIOD, or check MTC and submit by hand.{Colors.ENDC}")
+                        return False, msg
 
                 age_days = (now_utc - original_claim_dt.astimezone(timezone.utc)).days
                 if self.max_session_age_days and age_days > self.max_session_age_days:
