@@ -76,6 +76,8 @@ You need:
    - **Source:** *Use existing docker-compose.yml*
 
    Click **Next** and **Done**. Container Manager builds the image and starts the container; the first build takes a few minutes.
+
+   Container Manager may store your `docker-compose.yml` as **`compose.yaml`** in the same folder. That is normal and the contents stay the same. From then on, edit it through Project → `tesla_mtc` → **YAML Configurations**, which always shows the file the project uses.
 5. Open `http://<address-of-your-NAS>:8080`, and continue with [First use](#first-use).
 
 If port 8080 is already in use on your NAS, change the left number in `docker-compose.yml`, for example `"8085:8080"`, and open that port instead.
@@ -251,7 +253,7 @@ Submitting through the API needs `RUNNER_ALLOW_LIVE=true` and skips the confirma
 ## Updating
 
 - **Docker Compose:** `git pull` (or extract the new release over the old folder, keeping `.env`, `skip.txt` and `docker-compose.yml`), then `docker compose up -d --build`.
-- **Synology:** upload the new release files over the old ones (keep your `.env`, `skip.txt` and `docker-compose.yml`), then Container Manager → Project → `tesla_mtc` → Action → **Build**.
+- **Synology:** upload the new release files over the old ones (keep your `.env`, `skip.txt` and `docker-compose.yml` or `compose.yaml`), then Container Manager → Project → `tesla_mtc` → Action → **Build**. The release does not contain a `docker-compose.yml` or `compose.yaml`, only `docker-compose.example.yml`, so your own compose file is never overwritten.
 
 After updating, do a test run and open the **Technical log**: its first lines show the version that actually ran (`tesla_mtc 1.2.0`). If it still shows the old version, the image was not rebuilt. On Synology, use Action → **Clean** and then **Build**. The release notes list what changed.
 
@@ -266,4 +268,5 @@ After updating, do a test run and open the **Technical log**: its first lines sh
 | A session you claimed by hand is **Ready to submit** | Put its Tesla session ID in MTC's note field, or add it to `skip.txt`. |
 | A warning about the maximum number of MTC transactions | Your `LOOKBACK_PERIOD` holds more MTC transactions than `MTC_MAX_RECORDS`. Older sessions are then shown as **Check by hand**. Raise `MTC_MAX_RECORDS` in `.env`, or lower `LOOKBACK_PERIOD`. |
 | Times on the page are off | Set `TZ` in `docker-compose.yml`, for example `TZ: Europe/Amsterdam`. |
+| Can't find `docker-compose.yml` on the NAS | Container Manager may have saved it as `compose.yaml`. Change settings through Project → `tesla_mtc` → **YAML Configurations**. |
 | Changes to `.env` have no effect | Recreate the container: `docker compose up -d` (Synology: build the project again). A plain restart does not reload `.env`. |
