@@ -129,6 +129,7 @@ TEXT = {
         "st_submitted": "Submitted", "st_would": "Ready to submit",
         "st_duplicate": "Already claimed", "st_failed": "Failed",
         "st_tooold": "Check by hand",
+        "d_unchecked": "Not submitted automatically: MTC returned its maximum number of transactions (oldest from {date}), so this session could not be checked for duplicates. Raise MTC_MAX_RECORDS, or check MTC and submit by hand.",
         "d_tooold": "{days} days old: not submitted automatically. Check MTC and submit by hand "
                     "if it was not claimed yet.",
         "st_noinvoice": "No invoice", "st_busy": "Processing…",
@@ -182,6 +183,7 @@ TEXT = {
         "st_submitted": "Ingediend", "st_would": "Klaar om in te dienen",
         "st_duplicate": "Al gedeclareerd", "st_failed": "Mislukt",
         "st_tooold": "Handmatig controleren",
+        "d_unchecked": "Niet automatisch ingediend: MTC gaf het maximale aantal transacties terug (oudste van {date}), dus deze sessie kon niet op dubbele declaraties gecontroleerd worden. Verhoog MTC_MAX_RECORDS, of controleer in MTC en dien handmatig in.",
         "d_tooold": "{days} dagen oud: niet automatisch ingediend. Controleer in MTC en dien "
                     "handmatig in als hij nog niet gedeclareerd is.",
         "st_noinvoice": "Geen factuur", "st_busy": "Bezig…",
@@ -248,6 +250,13 @@ class Fmt:
         return (f'<time datetime="{d.isoformat()}">'
                 f'{d.day} {self.t["months"][d.month - 1]} {d:%H:%M}</time>')
 
+    def day(self, iso_date):
+        try:
+            d = datetime.strptime(iso_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return iso_date or ""
+        return f"{d.day} {self.t['months'][d.month - 1]} {d.year}"
+
     def session_when(self, iso):
         try:
             d = datetime.fromisoformat(iso)  # Tesla provides local time with offset
@@ -266,6 +275,7 @@ LOCATION = re.compile(r"^Location: (.*) on (\S+)$")
 DETAILS = re.compile(r"^Details:\s+([\d.]+) kWh, (\w+) ([\d.]+)$")
 HIDDEN = ("CSRF token", "SSL certificate verification is disabled")
 TOO_OLD = re.compile(r"Not submitted automatically: .* is (\d+) days old")
+UNCHECKED = re.compile(r"could not be checked for duplicates.* the oldest is from ([\w-]+)")
 FAILED = ("Claim submission failed", "Failed after", "Failed to submit claim",
           "final submission attempt")
 
@@ -326,6 +336,11 @@ def parse_log(lines):
             if det:
                 current["kwh"], current["currency"] = float(det.group(1)), det.group(2)
                 current["amount"] = float(det.group(3))
+                continue
+            unchecked = UNCHECKED.search(msg)
+            if unchecked:
+                current["status"] = "tooold"
+                current["detail"] = ("key_oldest", "d_unchecked", unchecked.group(1))
                 continue
             too_old = TOO_OLD.search(msg)
             if too_old:
@@ -615,7 +630,9 @@ def render(snap, lang, picked):
             detail = ""
             if x["detail"]:
                 kind, value = x["detail"][:2]
-                if kind == "key_days":
+                if kind == "key_oldest":
+                    detail = f'<div class="detail note">{esc(f(value, date=f.day(x["detail"][2])))}</div>'
+                elif kind == "key_days":
                     detail = f'<div class="detail note">{esc(f(value, days=x["detail"][2]))}</div>'
                 else:
                     detail = f'<div class="detail">{esc(f(value) if kind == "key" else value)}</div>'

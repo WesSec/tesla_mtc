@@ -148,7 +148,7 @@ After submitting you see what was sent:
 | ● **Ready to submit** | Not found in your MTC claims; would be submitted. | Check it, then submit. |
 | ✓ **Submitted** | Submitted in this run. | Nothing. |
 | ✓ **Already claimed** | MTC already has a claim with this session's ID. | Nothing. |
-| ⏸ **Check by hand** | Older than `MAX_SESSION_AGE_DAYS` (default 60 days) and not found in MTC, so it is not submitted automatically. | Check in MTC. If it was really not claimed, submit it by hand, or raise `MAX_SESSION_AGE_DAYS`. Add the session ID to `skip.txt` to stop seeing it. |
+| ⏸ **Check by hand** | Not submitted automatically, for one of two reasons shown below the session: it is older than `MAX_SESSION_AGE_DAYS` (default 60 days) and not found in MTC, or MTC returned its maximum number of transactions (`MTC_MAX_RECORDS`) and this session is older than all of them, so duplicates could not be checked. | Check in MTC. If it was really not claimed, submit it by hand. Otherwise raise `MAX_SESSION_AGE_DAYS` or `MTC_MAX_RECORDS`, or add the session ID to `skip.txt` to stop seeing it. |
 | ✕ **Failed** | MTC refused the claim; the reason is shown below the session. | Read the reason; see the technical log. |
 | ✕ **No invoice** | Tesla had no invoice for this session (yet). | Try again later. |
 
@@ -246,6 +246,6 @@ After updating, do a test run and open the **Technical log**: its first lines sh
 | "Run failed" | Open the **Technical log** on the page. Common causes: an expired `TESLA_REFRESH_TOKEN`, or wrong MTC login details in `.env`. |
 | Error about `skip.txt` / *Is a directory* | Docker created a folder because `skip.txt` did not exist. Remove the folder, create an empty `skip.txt` file and restart. |
 | A session you claimed by hand is **Ready to submit** | Put its Tesla session ID in MTC's note field, or add it to `skip.txt`. |
-| A warning about the maximum number of MTC transactions | Raise `MTC_MAX_RECORDS` in `.env`. |
+| A warning about the maximum number of MTC transactions | Your `LOOKBACK_PERIOD` holds more MTC transactions than `MTC_MAX_RECORDS`. Older sessions are then shown as **Check by hand**. Raise `MTC_MAX_RECORDS` in `.env`, or lower `LOOKBACK_PERIOD`. |
 | Times on the page are off | Set `TZ` in `docker-compose.yml`, for example `TZ: Europe/Amsterdam`. |
 | Changes to `.env` have no effect | Recreate the container: `docker compose up -d` (Synology: build the project again). A plain restart does not reload `.env`. |
