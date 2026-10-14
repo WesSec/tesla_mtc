@@ -63,11 +63,11 @@ You need:
 ## Setup on a Synology NAS (Container Manager)
 
 1. Download the ZIP of the [latest release](https://github.com/WesSec/tesla_mtc/releases/latest).
-2. In **File Station**, create a folder such as `docker/tesla_mtc` and upload the *contents* of the ZIP into it.
-3. Prepare three files on your computer and upload them to the same folder:
+2. In **File Station**, upload the ZIP to the `docker` shared folder, right-click it and choose **Extract → Extract here**. This creates a folder such as `docker/tesla_mtc-1.2.0`. Rename that folder to `tesla_mtc` and delete the ZIP.
+3. Prepare three files on your computer and upload them into `docker/tesla_mtc`, next to `main.py`:
    - `.env`: a copy of `.env.example` with your details filled in.
    - `skip.txt`: an empty text file.
-   - `docker-compose.yml`: a copy of `docker-compose.example.yml`.
+   - `docker-compose.yml`: a copy of `docker-compose.example.yml` from the ZIP. Check that it says `build: .` and does not mention any other folder. A compose file from an older tesla_mtc setup will not work here.
 
    File Station hides files starting with a dot. If you can't find `.env` after uploading, enable hidden files in File Station's settings.
 4. Open **Container Manager → Project → Create**:
@@ -79,6 +79,8 @@ You need:
 5. Open `http://<address-of-your-NAS>:8080`, and continue with [First use](#first-use).
 
 If port 8080 is already in use on your NAS, change the left number in `docker-compose.yml`, for example `"8085:8080"`, and open that port instead.
+
+Already running tesla_mtc in another container and want to try this next to it? Use a separate folder, a different `container_name` and a different port in `docker-compose.yml`, and leave `RUNNER_ALLOW_LIVE` on `"false"` so only one setup can submit.
 
 ## Setup without Docker
 
