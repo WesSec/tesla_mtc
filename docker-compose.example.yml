@@ -1,0 +1,21 @@
+# Copy to docker-compose.yml, then: docker compose up -d --build
+# Full instructions: docs/web-runner.md
+services:
+  tesla_mtc:
+    build: .
+    container_name: tesla_mtc
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # No one answers questions inside a container
+      UNKNOWN_COUNTRY_ACTION: SKIP
+      # Keep "false" until a test run shows exactly what you expect, then set to "true"
+      RUNNER_ALLOW_LIVE: "false"
+      # Optional: require ?token=... in the URL (or a Bearer header for Home Assistant)
+      # RUNNER_TOKEN: "change-me-to-a-long-random-string"
+    ports:
+      - "8080:8080"
+    volumes:
+      # Create this file first (it may be empty), otherwise Docker creates a folder instead
+      - ./skip.txt:/app/skip.txt:ro
