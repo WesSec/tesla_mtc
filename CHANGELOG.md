@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - Unreleased
+
+### Added
+- Web interface (`web/runner.py`, standard library only): start runs from a phone or
+  Home Assistant, test run first and submit after a confirmation, a formatted result
+  per charging session, choice of how many recent sessions to check, English and Dutch,
+  light and dark mode, and a `/status` JSON endpoint. Submitting stays off until
+  `RUNNER_ALLOW_LIVE=true`. See `docs/web-runner.md`.
+- `Dockerfile`, `.dockerignore` and `docker-compose.example.yml`. The container keeps
+  running between runs instead of stopping after each one.
+- Documentation with setup instructions (Docker Compose, Synology Container Manager,
+  without Docker), a first-use walkthrough with screenshots, and Home Assistant examples.
+
 ## [1.1.0] - 2026-10-13
 
 ### Added
@@ -30,5 +43,6 @@ and this project follows [Semantic Versioning](https://semver.org/).
 Baseline: the state of the project when maintenance moved to @Jochemp88
 (commit `0df93ae`).
 
+[1.2.0]: https://github.com/WesSec/tesla_mtc/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/WesSec/tesla_mtc/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/WesSec/tesla_mtc/releases/tag/v1.0.0

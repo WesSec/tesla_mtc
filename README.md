@@ -35,6 +35,31 @@ Never commit your `.env` file or share your:
    sudo apt install poppler-utils
    ```
 
+## Web Interface (optional)
+
+<img src="docs/images/3-test-run-result.jpg" alt="Web interface showing the result of a test run" width="260" align="right">
+
+Prefer tapping a button over running a script? The web interface runs tesla_mtc in Docker (for example on a Synology NAS) and lets you start it from your phone or Home Assistant:
+
+- test run first, then submit after a confirmation;
+- one card per charging session showing whether it is ready to submit or already claimed;
+- choose how many recent sessions to check;
+- English and Dutch, light and dark mode;
+- submitting stays switched off until you enable it.
+
+Quick start with Docker Compose:
+
+```bash
+cp .env.example .env              # then fill it in
+touch skip.txt
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d --build      # open http://<your-server>:8080
+```
+
+See **[docs/web-runner.md](docs/web-runner.md)** for the full setup (including Synology Container Manager), a first-use walkthrough with screenshots, and Home Assistant examples.
+
+<br clear="right">
+
 ## Environment Variables
 
 ### Required Settings

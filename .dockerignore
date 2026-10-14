@@ -1,0 +1,11 @@
+# Secrets and personal files are passed in at runtime, never baked into the image
+.env
+skip.txt
+logs/
+
+.git/
+.github/
+docs/
+__pycache__/
+*.pyc
+docker-compose*.yml
