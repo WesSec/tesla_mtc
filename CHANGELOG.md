@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] - Unreleased
+## [1.2.0] - 2026-10-14
 
 ### Added
 - Web interface (`web/runner.py`, standard library only): start runs from a phone or
