@@ -107,8 +107,16 @@ TEXT = {
         "running": "Running",
         "step_start": "Starting", "step_fetch": "Fetching sessions and invoices from Tesla",
         "step_login": "Logged in to MTC", "step_session": "Processing session {i} of {n}",
-        "live_off": "Submitting is switched off. Check a test run first, then set "
-                    "<code>RUNNER_ALLOW_LIVE=true</code> and restart to enable it.",
+        "live_off": "Submitting is switched off. Check a test run first, then switch it on.",
+        "live_how": "How do I switch it on?",
+        "live_steps": "<li>Open <code>docker-compose.yml</code> in your tesla_mtc folder. On a Synology NAS: "
+                      "Container Manager → <b>Project</b> → your project → <b>YAML Configurations</b>.</li>"
+                      "<li>Under <code>environment:</code>, change <code>RUNNER_ALLOW_LIVE: \"false\"</code> "
+                      "to <code>RUNNER_ALLOW_LIVE: \"true\"</code>. Do this in <code>docker-compose.yml</code>, "
+                      "not in <code>.env</code>: the compose file wins.</li>"
+                      "<li>Apply it: <code>docker compose up -d</code>. On a Synology NAS: <b>Save</b>, then "
+                      "<b>Action → Build</b>. A restart alone is not enough.</li>"
+                      "<li>Reload this page: <b>Submit claims</b> is now available.</li>",
         "blocked_title": "Submitting blocked",
         "blocked_text": "The start script blocked submitting: the file "
                         "<code>allow/ALLOW_LIVE</code> is missing. Create it to allow submitting claims.",
@@ -160,8 +168,16 @@ TEXT = {
         "running": "Bezig",
         "step_start": "Opstarten", "step_fetch": "Laadsessies en facturen ophalen bij Tesla",
         "step_login": "Ingelogd bij MTC", "step_session": "Sessie {i} van {n} verwerken",
-        "live_off": "Declareren staat uit. Controleer eerst een proefrun, zet dan "
-                    "<code>RUNNER_ALLOW_LIVE=true</code> en herstart om het aan te zetten.",
+        "live_off": "Declareren staat uit. Controleer eerst een proefrun en zet het dan aan.",
+        "live_how": "Hoe zet ik dit aan?",
+        "live_steps": "<li>Open <code>docker-compose.yml</code> in je tesla_mtc-map. Op een Synology NAS: "
+                      "Container Manager → <b>Project</b> → je project → <b>YAML Configurations</b>.</li>"
+                      "<li>Verander onder <code>environment:</code> <code>RUNNER_ALLOW_LIVE: \"false\"</code> "
+                      "in <code>RUNNER_ALLOW_LIVE: \"true\"</code>. Doe dit in <code>docker-compose.yml</code>, "
+                      "niet in <code>.env</code>: het compose-bestand wint.</li>"
+                      "<li>Pas het toe: <code>docker compose up -d</code>. Op een Synology NAS: <b>Save</b> en "
+                      "daarna <b>Action → Build</b>. Alleen herstarten is niet genoeg.</li>"
+                      "<li>Laad deze pagina opnieuw: <b>Declareren</b> is nu beschikbaar.</li>",
         "blocked_title": "Declareren geblokkeerd",
         "blocked_text": "Het startscript blokkeerde declareren: het bestand "
                         "<code>allow/ALLOW_LIVE</code> ontbreekt. Maak het aan om declareren toe te staan.",
@@ -453,6 +469,11 @@ button{width:100%;padding:14px 10px;font:600 1em system-ui,sans-serif;border:0;b
 button:disabled{opacity:.45;cursor:default}
 .hint{color:var(--muted);font-size:.85em;margin:10px 0 0}
 .hint.off{color:var(--warn)}
+.how{margin-top:6px;font-size:.85em}
+.how summary{cursor:pointer;color:var(--accent);font-weight:600}
+.how ol{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+.how li{margin:4px 0}
+.how code{white-space:nowrap}
 .hint code,.banner code{font-size:.95em}
 .pick{border:0;margin:0 0 14px;padding:0}
 .pick legend{font-size:.85em;color:var(--muted);margin-bottom:6px;padding:0}
@@ -564,7 +585,10 @@ def render(snap, lang, picked):
                  f'<div class="seg">{seg}</div></fieldset><div class="btns">'
                  f'<button class="dry" {dis}>{f("dry")}</button>{live_trigger(f("live"), dis)}'
                  f'</div><p class="hint">{f("hint")}</p>'
-                 + ("" if ALLOW_LIVE else f'<p class="hint off">🔒 {f("live_off")}</p>')
+                 + ("" if ALLOW_LIVE else
+                    f'<p class="hint off">🔒 {f("live_off")}</p>'
+                    f'<details class="how"><summary>{f("live_how")}</summary>'
+                    f'<ol>{f("live_steps")}</ol></details>')
                  + '</form>')
 
     if running:

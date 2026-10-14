@@ -98,7 +98,7 @@ Then open `http://localhost:8080`. Settings from the [table below](#settings) ca
 
 <img src="images/1-first-start.jpg" alt="The page on first start" width="300">
 
-Submitting is still switched off (the 🔒 note). That is intentional: first check that a test run gives the result you expect.
+Submitting is still switched off (the 🔒 note). That is intentional: first check that a test run gives the result you expect. *How do I switch it on?* shows the steps for later; they are also in [step 4](#4-switch-submitting-on).
 
 The row of numbers sets **how many recent charging sessions are checked**. Choose enough to cover everything since your last claim. Already-claimed sessions are recognised and skipped, so checking a few too many is harmless. The default comes from `MAX_SESSIONS` in `.env`; after that the page remembers your last choice.
 
@@ -122,12 +122,28 @@ The **Technical log** at the bottom shows tesla_mtc's own output, which helps wh
 
 ### 4. Switch submitting on
 
-When the test run looks right, set `RUNNER_ALLOW_LIVE: "true"` in `docker-compose.yml` and apply it:
+When the test run looks right, switch submitting on in **`docker-compose.yml`**. The page shows the same steps under *How do I switch it on?*.
 
-- **Docker Compose:** `docker compose up -d`
-- **Synology:** edit the YAML under Project → `tesla_mtc` → *YAML Configurations*, save, and build the project again when asked.
+1. Open `docker-compose.yml`:
+   - **Docker Compose:** the file in your tesla_mtc folder;
+   - **Synology:** Container Manager → **Project** → `tesla_mtc` → **YAML Configurations**.
+2. Under `environment:`, change `"false"` to `"true"`:
 
-The 🔒 note disappears and **Submit claims** becomes available.
+   ```yaml
+       environment:
+         UNKNOWN_COUNTRY_ACTION: SKIP
+         RUNNER_ALLOW_LIVE: "true"
+   ```
+
+   Change it here, **not in `.env`**. `docker-compose.yml` sets `RUNNER_ALLOW_LIVE` itself, and that value wins over the one in `.env`.
+3. Apply the change:
+   - **Docker Compose:** `docker compose up -d`
+   - **Synology:** click **Save**, then **Action → Build**.
+
+   A plain restart is not enough: the container has to be recreated to pick up the new setting.
+4. Reload the page. The 🔒 note is gone and **Submit claims** is available.
+
+To switch submitting off again, set it back to `"false"` the same way.
 
 ### 5. Submit
 
@@ -162,7 +178,7 @@ Web interface settings, set under `environment:` in `docker-compose.yml`:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `RUNNER_ALLOW_LIVE` | `false` | `true` enables submitting. Test runs always work. |
+| `RUNNER_ALLOW_LIVE` | `false` | `true` enables submitting; see [Switch submitting on](#4-switch-submitting-on). Test runs always work. |
 | `RUNNER_TOKEN` | *(empty)* | When set, the page only opens with `?token=<value>` in the URL, and API calls need the header `Authorization: Bearer <value>`. |
 | `RUNNER_PORT` | `8080` | Port inside the container. To change the port on your server, change the left number under `ports:` instead. |
 | `TZ` / `RUNNER_TZ` | `Europe/Amsterdam` | Time zone for times on the page. |
@@ -244,7 +260,7 @@ After updating, do a test run and open the **Technical log**: its first lines sh
 | Problem | Solution |
 |---|---|
 | The page does not open | Check the container is running and the port under `ports:`. On a NAS, check the firewall allows the port. |
-| **Submit claims** is greyed out with a 🔒 note | Submitting is off: set `RUNNER_ALLOW_LIVE: "true"` and restart. |
+| **Submit claims** is greyed out with a 🔒 note | Submitting is off. Follow [Switch submitting on](#4-switch-submitting-on). Set it in `docker-compose.yml`, not `.env`, and rebuild rather than restart. |
 | "Run failed" | Open the **Technical log** on the page. Common causes: an expired `TESLA_REFRESH_TOKEN`, or wrong MTC login details in `.env`. |
 | Error about `skip.txt` / *Is a directory* | Docker created a folder because `skip.txt` did not exist. Remove the folder, create an empty `skip.txt` file and restart. |
 | A session you claimed by hand is **Ready to submit** | Put its Tesla session ID in MTC's note field, or add it to `skip.txt`. |
