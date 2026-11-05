@@ -1,0 +1,56 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!WARNING]
+        > This repository is public. Before you paste a log or a screenshot, remove your
+        > **Tesla refresh token**, **MTC username and password**, **IBAN**, **VIN** and the
+        > **CSRF token** line. Amounts, dates and locations are your own choice to share.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown at startup ("tesla_mtc x.y.z") and in `version.py`.
+      placeholder: "1.2.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How do you run tesla_mtc?
+      options:
+        - Docker with the web interface (for example on a Synology NAS)
+        - Docker, running main.py directly
+        - Python on my own machine
+        - Other (please describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log of a test run
+      description: Run with `MODE=DRY` (or the Test run button) and paste the relevant part, with personal data removed.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed tokens, passwords, my IBAN and my VIN from everything I pasted.
+          required: true
+        - label: I tried a test run (`MODE=DRY`) first.

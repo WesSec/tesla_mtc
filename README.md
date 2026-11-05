@@ -1,5 +1,9 @@
 # Tesla MTC Integration
 
+[![Validate](https://img.shields.io/github/actions/workflow/status/WesSec/tesla_mtc/validate.yml?branch=main&label=Validate&logo=github)](https://github.com/WesSec/tesla_mtc/actions/workflows/validate.yml)
+[![release](https://img.shields.io/github/v/release/WesSec/tesla_mtc?color=orange)](https://github.com/WesSec/tesla_mtc/releases/latest)
+[![License](https://img.shields.io/github/license/WesSec/tesla_mtc?color=blue)](LICENSE)
+
 Project Status: Created by @WesSec. Active maintenance, issue triage, and releases are now led by @Jochemp88.
 
 Automatically submit Tesla charging sessions to MultiTankCard (MTC) for reimbursement. This tool integrates with both Tesla's API to fetch your charging sessions and MTC's reimbursement system to automate the submission process.
@@ -103,6 +107,16 @@ https://tesla-info.com/tesla-token.php
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org). The current version is in `version.py`, is logged at startup, and every release is tagged as `v<version>` with its changes listed in [CHANGELOG.md](CHANGELOG.md).
+
+## Development
+
+Every push and pull request is checked automatically (lint, unit tests and a Docker build with a short smoke test, see [.github/workflows/validate.yml](.github/workflows/validate.yml)). The tests use fictional data and never contact Tesla or MTC. To run the same checks locally:
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
 
 ## Error Handling
 

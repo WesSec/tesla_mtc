@@ -1,0 +1,2 @@
+# Always start from a template, so the warning about personal data is seen
+blank_issues_enabled: false

@@ -1,0 +1,4 @@
+# Tools for the checks in .github/workflows/validate.yml
+-r requirements.txt
+pytest==9.2.0
+ruff==0.17.3

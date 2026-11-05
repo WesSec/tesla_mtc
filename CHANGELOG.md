@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Automatic checks on every push and pull request: lint, unit tests with fictional data
+  (duplicate check, safety limits, the claim sent to MTC, Tesla session handling, and the
+  web interface's log reading and safety checks) and a Docker build with a smoke test.
+  Run them locally with `pip install -r requirements-dev.txt`, `ruff check .` and `pytest`.
+- Issue templates that remind you to remove tokens, passwords, IBAN and VIN from logs.
+- Monthly grouped dependency updates (Dependabot) and status badges in the README.
+
 ## [1.2.0] - 2026-10-14
 
 ### Added
