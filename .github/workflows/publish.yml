@@ -1,0 +1,153 @@
+name: Publish image
+
+# Builds the Docker image for amd64 and arm64 and publishes it to ghcr.io/wessec/tesla_mtc:
+# - for every release tag (v1.2.3): tags 1.2.3, 1.2, 1 and latest (the last two only for the newest release);
+# - by hand (Actions → Publish image → Run workflow) for an existing release tag, for example to publish
+#   a release that predates this workflow or to pick up security updates of the base image;
+# - in pull requests that change the image: build only, nothing is published.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish, for example v1.2.1
+        required: true
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - requirements.txt
+      - .github/workflows/publish.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/wessec/tesla_mtc
+
+jobs:
+  image:
+    name: Build${{ github.event_name != 'pull_request' && ' and publish' || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Choose the release
+        id: release
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          case "$EVENT" in
+            workflow_dispatch) tag="$INPUT_TAG" ;;
+            push) tag="$GITHUB_REF_NAME" ;;
+            *) tag="" ;;
+          esac
+          if [ -n "$tag" ] && ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$tag' is not a release tag like v1.2.3"; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Check the release
+        id: check
+        if: steps.release.outputs.tag != ''
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -eu
+          code=$(python3 -c "import version; print(version.__version__)")
+          [ "$code" = "$VERSION" ] || { echo "::error::$TAG, but version.py says $code"; exit 1; }
+          grep -Eq "^## \[$VERSION\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md \
+            || { echo "::error::CHANGELOG.md has no dated entry for $VERSION"; exit 1; }
+          # 'latest' and the major tag only move for the newest release, never backwards
+          newest=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1)
+          echo "newest=$([ "$TAG" = "$newest" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build for the smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: tesla_mtc:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          set -eu
+          test "$(docker run --rm tesla_mtc:test id -u)" = "1000"
+          docker run --rm tesla_mtc:test python -c "import main, MTC"
+          docker run -d --name tesla_mtc_test tesla_mtc:test
+          for _ in $(seq 1 30); do
+            docker exec tesla_mtc_test python web/healthcheck.py && break
+            sleep 1
+          done
+          docker exec tesla_mtc_test python web/healthcheck.py
+          docker rm -f tesla_mtc_test
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.release.outputs.tag }},enable=${{ steps.release.outputs.tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.release.outputs.tag }},enable=${{ steps.release.outputs.tag != '' }}
+            type=semver,pattern={{major}},value=${{ steps.release.outputs.tag }},enable=${{ steps.check.outputs.newest == 'true' }}
+            type=raw,value=latest,enable=${{ steps.check.outputs.newest == 'true' }}
+            type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=tesla_mtc
+            org.opencontainers.image.description=Submit Tesla Supercharger sessions to MultiTankCard (MTC) for reimbursement
+            org.opencontainers.image.licenses=MIT
+
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build for amd64 and arm64${{ github.event_name != 'pull_request' && ' and publish' || '' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # A plain multi-platform image, without attestation entries that some NAS interfaces show as "unknown"
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          PUSHED: ${{ github.event_name != 'pull_request' }}
+        run: |
+          {
+            if [ "$PUSHED" = true ]; then echo "### Published"; else echo "### Built (not published)"; fi
+            printf '%s\n' "$TAGS" | sed 's/^/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -118,6 +118,15 @@ ruff check .
 pytest
 ```
 
+### Releasing
+
+1. Bump `version.py` and give the version a dated entry in `CHANGELOG.md` (`## [1.2.3] - 2026-01-31`).
+2. Merge to `main`, then tag and push: `git tag -a v1.2.3 -m "tesla_mtc 1.2.3" && git push origin v1.2.3`.
+3. The [Publish image](.github/workflows/publish.yml) workflow checks that the tag, `version.py` and the changelog agree, runs a smoke test, and publishes `ghcr.io/wessec/tesla_mtc` for amd64 and arm64 with the tags `1.2.3`, `1.2`, `1` and `latest` (the last two only for the newest release).
+4. Create the GitHub release with the changelog entry as release notes.
+
+To publish an existing release again, for example to pick up security updates of the base image, run **Actions → Publish image → Run workflow** with its tag (1.2.1 or later).
+
 ## Error Handling
 
 The system includes error handling:
