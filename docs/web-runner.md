@@ -36,49 +36,54 @@ A small web page to start tesla_mtc from your phone and see a readable result. I
 You need:
 
 - A filled-in `.env` file with your Tesla and MTC details. Copy `.env.example` to `.env` and follow the [main README](../README.md#environment-variables). The `MODE` setting in `.env` is ignored by the web interface: the button you press decides between a test run and submitting.
-- **Docker with Docker Compose**, or **Synology Container Manager**, or Python 3.10+ with `poppler-utils` if you run it without Docker.
+- **Docker with Docker Compose**, or **Synology Container Manager**, on an Intel/AMD (amd64) or 64-bit ARM (arm64) machine. Or Python 3.10+ with `poppler-utils` if you run it without Docker.
 
 > ⚠️ MTC claims **cannot be withdrawn** once submitted. Always start with a test run and check the result before you enable submitting.
 
 ## Setup with Docker Compose
 
-1. Get the code: clone the repository, or download the ZIP of the [latest release](https://github.com/WesSec/tesla_mtc/releases/latest) and extract it.
-2. In that folder, create your settings and an (empty) skip list:
+tesla_mtc is published as a ready-made image, `ghcr.io/wessec/tesla_mtc`, so you only need three files:
+
+1. Create a folder with your settings, an (empty) skip list and the compose file:
 
    ```bash
-   cp .env.example .env
+   mkdir tesla_mtc && cd tesla_mtc
+   curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/WesSec/tesla_mtc/main/docker-compose.example.yml
+   curl -fsSLo .env https://raw.githubusercontent.com/WesSec/tesla_mtc/main/.env.example
    touch skip.txt
-   cp docker-compose.example.yml docker-compose.yml
    ```
 
    Then fill in `.env`. Create `skip.txt` even if you don't use it: otherwise Docker creates a *folder* with that name.
-3. Build and start:
+2. Start:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
-4. Open `http://<address-of-your-server>:8080` in your browser, and continue with [First use](#first-use).
+3. Open `http://<address-of-your-server>:8080` in your browser, and continue with [First use](#first-use).
+
+The compose file uses `ghcr.io/wessec/tesla_mtc:1`, which follows every 1.x release. Prefer to build the image yourself? Clone the repository (or extract a release ZIP), copy `docker-compose.example.yml` to `docker-compose.yml`, replace the `image:` line with `build: .`, and start with `docker compose up -d --build`.
 
 ## Setup on a Synology NAS (Container Manager)
 
-1. Download the ZIP of the [latest release](https://github.com/WesSec/tesla_mtc/releases/latest).
-2. In **File Station**, upload the ZIP to the `docker` shared folder, right-click it and choose **Extract → Extract here**. This creates a folder such as `docker/tesla_mtc-1.2.0`. Rename that folder to `tesla_mtc` and delete the ZIP.
-3. Prepare three files on your computer and upload them into `docker/tesla_mtc`, next to `main.py`:
-   - `.env`: a copy of `.env.example` with your details filled in.
+1. In **File Station**, create the folder `docker/tesla_mtc`.
+2. Prepare three files on your computer and upload them into that folder:
+   - `.env`: a copy of [`.env.example`](../.env.example) with your details filled in.
    - `skip.txt`: an empty text file.
-   - `docker-compose.yml`: a copy of `docker-compose.example.yml` from the ZIP. Check that it says `build: .` and does not mention any other folder. A compose file from an older tesla_mtc setup will not work here.
+   - `docker-compose.yml`: a copy of [`docker-compose.example.yml`](../docker-compose.example.yml). A compose file from an older tesla_mtc setup will not work here.
 
    File Station hides files starting with a dot. If you can't find `.env` after uploading, enable hidden files in File Station's settings.
-4. Open **Container Manager → Project → Create**:
+3. Open **Container Manager → Project → Create**:
    - **Project name:** `tesla_mtc`
-   - **Path:** the folder from step 2
+   - **Path:** the folder from step 1
    - **Source:** *Use existing docker-compose.yml*
 
-   Click **Next** and **Done**. Container Manager builds the image and starts the container; the first build takes a few minutes.
+   Click **Next** and **Done**. Container Manager downloads the image and starts the container.
+
+This works on Synology models with an Intel/AMD or a 64-bit ARM processor. On a model with a 32-bit ARM processor the image cannot be downloaded; build it yourself instead, as in the previous section (`build: .` with the files of a release ZIP in the folder).
 
    Container Manager may store your `docker-compose.yml` as **`compose.yaml`** in the same folder. That is normal and the contents stay the same. From then on, edit it through Project → `tesla_mtc` → **YAML Configurations**, which always shows the file the project uses.
-5. Open `http://<address-of-your-NAS>:8080`, and continue with [First use](#first-use).
+4. Open `http://<address-of-your-NAS>:8080`, and continue with [First use](#first-use).
 
 If port 8080 is already in use on your NAS, change the left number in `docker-compose.yml`, for example `"8085:8080"`, and open that port instead.
 
@@ -255,10 +260,18 @@ Submitting through the API needs `RUNNER_ALLOW_LIVE=true` and skips the confirma
 
 ## Updating
 
-- **Docker Compose:** `git pull` (or extract the new release over the old folder, keeping `.env`, `skip.txt` and `docker-compose.yml`), then `docker compose up -d --build`.
-- **Synology:** upload the new release files over the old ones (keep your `.env`, `skip.txt` and `docker-compose.yml` or `compose.yaml`), then Container Manager → Project → `tesla_mtc` → Action → **Build**. The release does not contain a `docker-compose.yml` or `compose.yaml`, only `docker-compose.example.yml`, so your own compose file is never overwritten.
+With the ready-made image (`image: ghcr.io/wessec/tesla_mtc:1`):
 
-After updating, do a test run and open the **Technical log**: its first lines show the version that actually ran (`tesla_mtc 1.2.0`). If it still shows the old version, the image was not rebuilt. On Synology, use Action → **Clean** and then **Build**. The release notes list what changed.
+- **Docker Compose:** `docker compose pull && docker compose up -d`.
+- **Synology:** when Container Manager → **Image** shows an update for `ghcr.io/wessec/tesla_mtc`, choose **Update**. Otherwise: Project → `tesla_mtc` → **Stop**, delete the `ghcr.io/wessec/tesla_mtc` image under **Image**, and choose Project → `tesla_mtc` → Action → **Build**, which downloads the newest image.
+
+Your `.env`, `skip.txt` and compose file stay as they are.
+
+**Coming from a setup that builds the image itself** (`build: .` in your compose file)? Replace that line with `image: ghcr.io/wessec/tesla_mtc:1` (on Synology through Project → `tesla_mtc` → **YAML Configurations**) and start again: `docker compose up -d`, or on Synology **Save** and Action → **Build**. The other files in the folder are no longer used and can stay.
+
+If you build the image yourself: `git pull` (or extract the new release over the old folder, keeping `.env`, `skip.txt` and `docker-compose.yml`), then `docker compose up -d --build`. On Synology, upload the new release files over the old ones and choose Action → **Build**; if the old version keeps running, Container Manager reused the old image: delete it under **Image** and build again.
+
+After updating, do a test run and open the **Technical log**: its first lines show the version that actually ran (`tesla_mtc 1.2.1`). The release notes list what changed.
 
 ## Troubleshooting
 
@@ -273,3 +286,4 @@ After updating, do a test run and open the **Technical log**: its first lines sh
 | Times on the page are off | Set `TZ` in `docker-compose.yml`, for example `TZ: Europe/Amsterdam`. |
 | Can't find `docker-compose.yml` on the NAS | Container Manager may have saved it as `compose.yaml`. Change settings through Project → `tesla_mtc` → **YAML Configurations**. |
 | Changes to `.env` have no effect | Recreate the container: `docker compose up -d` (Synology: build the project again). A plain restart does not reload `.env`. |
+| "no matching manifest" when the image is downloaded | Your machine has a 32-bit ARM processor; the image is only published for amd64 and arm64. Build it yourself with `build: .`, see [Setup with Docker Compose](#setup-with-docker-compose). |

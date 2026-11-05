@@ -1,8 +1,11 @@
-# Copy to docker-compose.yml, then: docker compose up -d --build
+# Save as docker-compose.yml next to your .env and skip.txt, then: docker compose up -d
 # Full instructions: docs/web-runner.md
 services:
   tesla_mtc:
-    build: .
+    # Ready-made image for amd64 and arm64. ":1" follows every 1.x release; pin a version
+    # such as ":1.2.1" if you prefer to update by hand. To build the image yourself from the
+    # source code in this folder instead, replace the image line with:  build: .
+    image: ghcr.io/wessec/tesla_mtc:1
     container_name: tesla_mtc
     restart: unless-stopped
     env_file:

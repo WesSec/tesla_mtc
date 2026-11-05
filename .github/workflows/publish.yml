@@ -63,6 +63,11 @@ jobs:
           ref: ${{ steps.release.outputs.tag || github.ref }}
           fetch-depth: 0
 
+      # The commit that is built: for a manual run this is the release tag, not the head of main
+      - name: Built commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Check the release
         id: check
         if: steps.release.outputs.tag != ''
@@ -120,6 +125,7 @@ jobs:
             org.opencontainers.image.title=tesla_mtc
             org.opencontainers.image.description=Submit Tesla Supercharger sessions to MultiTankCard (MTC) for reimbursement
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
 
       - name: Log in to ghcr.io
         if: github.event_name != 'pull_request'
