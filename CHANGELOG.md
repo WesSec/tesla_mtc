@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- A workflow that publishes a ready-made Docker image to `ghcr.io/wessec/tesla_mtc` for amd64 and
+  arm64 (for example a Raspberry Pi or an ARM-based NAS) with every release, after a smoke test.
+
 ## [1.2.1] - 2026-11-05
 
 ### Security
