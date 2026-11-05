@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
-## [1.2.1] - Unreleased
+## [1.2.1] - 2026-11-05
 
 ### Security
 - MTC's certificate is verified again. Verification used to be switched off because MTC's
@@ -35,6 +35,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - `tqdm` is pinned (4.70.1) like the other dependencies, so Dependabot can keep it up to date.
+- `requests` updated to 2.34.2 and `python-dotenv` to 1.2.4.
 - The startup warning about switched-off certificate verification is gone.
 
 ## [1.2.0] - 2026-10-14
