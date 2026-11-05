@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -47,6 +48,17 @@ SESSION_CHOICES = (1, 3, 5, 10, 20)
 SESSION_LIMIT = max(SESSION_CHOICES)
 
 
+def run_timeout():
+    """Seconds after which a run that has not finished is stopped (0: never)."""
+    try:
+        return max(int(os.environ.get("RUNNER_RUN_TIMEOUT", "900")), 0)
+    except ValueError:
+        return 900
+
+
+RUN_TIMEOUT = run_timeout()
+
+
 def default_sessions():
     try:
         return min(max(int(os.environ.get("MAX_SESSIONS", "1")), 1), SESSION_LIMIT)
@@ -71,15 +83,43 @@ def run_script(mode, sessions):
         RUN_CMD, cwd=APP_DIR, env=dict(os.environ, MODE=mode, MAX_SESSIONS=str(sessions)),
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
+        # Own process group, so stop() also ends what a wrapper script in RUNNER_CMD started
+        start_new_session=os.name != "nt",
     )
-    for line in proc.stdout:
-        print(line, end="", flush=True)  # also visible in the container log
-        with lock:
-            state["log"].append(line.rstrip("\n"))
-            del state["log"][:-MAX_LOG_LINES]
-    proc.wait()
+    # A run that hangs would otherwise keep the page (and Home Assistant) on "running" forever
+    stopped = threading.Event()
+
+    def stop():
+        stopped.set()
+        try:
+            if os.name != "nt":
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            pass  # finished just now
+
+    watchdog = threading.Timer(RUN_TIMEOUT, stop) if RUN_TIMEOUT else None
+    if watchdog:
+        watchdog.daemon = True
+        watchdog.start()
+    try:
+        for line in proc.stdout:
+            print(line, end="", flush=True)  # also visible in the container log
+            with lock:
+                state["log"].append(line.rstrip("\n"))
+                del state["log"][:-MAX_LOG_LINES]
+        proc.wait()
+    finally:
+        if watchdog:
+            watchdog.cancel()
     with lock:
+        if stopped.is_set():
+            message = f"Run stopped: not finished after {RUN_TIMEOUT} seconds (RUNNER_RUN_TIMEOUT)."
+            print(message, flush=True)
+            state["log"].append(f"{now():%Y-%m-%d %H:%M:%S} [ERROR] {message}")
         # entrypoint.sh pipes into tee, so a Python error does not set its exit code
+        # (a stopped run always has one: kill() makes it non-zero)
         failed = any("Traceback" in l or "LIVE mode blocked" in l for l in state["log"])
         code = proc.returncode if proc.returncode or not failed else 1
         state.update(running=False, exit_code=code, finished=now())

@@ -22,7 +22,8 @@ from urllib.parse import unquote
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 import sys # Required for logging to stdout in test_mtc_client
-from util import Colors
+from requests.adapters import HTTPAdapter
+from util import Colors, HTTP_TIMEOUT
 
 # For debugging purposes, can be removed or commented out in production
 # from requests_toolbelt.utils import dump
@@ -66,6 +67,30 @@ INITIAL_CSRF_TOKEN: str = "T6C+9iB49TLra4jEsMeSckDMNhQ="
 CLAIM_DATE_MARGIN_DAYS: int = 7
 
 DEFAULT_MAX_RECORDS: int = 400
+
+# MTC's server (mtc.outsystemsenterprise.com) presents MTC's own *.mtc.nl certificate, which
+# fails the normal host name check. Instead of switching verification off, the certificate
+# chain is still verified against the trusted CAs, and the certificate must be valid for this name.
+MTC_CERTIFICATE_NAME: str = "mtc.nl"
+
+
+class MTCAdapter(HTTPAdapter):
+    """Transport for all MTC calls: verifies MTC's certificate for `certificate_name`
+    (None: the normal check against the host name) and applies HTTP_TIMEOUT by default."""
+
+    def __init__(self, certificate_name: Optional[str] = MTC_CERTIFICATE_NAME) -> None:
+        self.certificate_name = certificate_name
+        super().__init__()
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        if self.certificate_name:
+            kwargs["assert_hostname"] = self.certificate_name
+        super().init_poolmanager(*args, **kwargs)
+
+    def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = HTTP_TIMEOUT
+        return super().send(request, **kwargs)
 
 
 def _oldest_transaction_date(transactions: list) -> Optional[datetime]:
@@ -181,7 +206,7 @@ class MTCClient:
             requests.Session: The configured session object.
         """
         session = requests.Session()
-        session.verify = False  # Disable SSL verification for MTC's known issues
+        session.mount(f"{self.base_url}/", MTCAdapter())  # see MTC_CERTIFICATE_NAME
         session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
@@ -235,7 +260,6 @@ class MTCClient:
                     "Sec-Fetch-Mode": "no-cors",
                     "Referer": f"{self.base_url}/MultiTankcard/"
                 },
-                verify=False # It's good practice to verify SSL. Set to False only if server has known cert issues.
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -254,6 +278,21 @@ class MTCClient:
         self._api_versions[endpoint_key] = api_version
         logger.debug(f"Fetched and cached API version for '{endpoint_key}': {api_version}")
         return api_version
+
+    def _first_request(self, url: str) -> requests.Response:
+        """
+        The first request of a session, which carries no credentials. If MTC's certificate is
+        not valid for MTC_CERTIFICATE_NAME (for example because MTC installed a certificate for
+        its real host name), the rest of the session uses the normal certificate check instead.
+        The certificate is always verified: when neither check passes, the run stops.
+        """
+        try:
+            return self.session.get(url)
+        except requests.exceptions.SSLError as e:
+            logger.info(f"MTC's certificate is not valid for {MTC_CERTIFICATE_NAME} ({e}); "
+                        f"retrying with the normal certificate check.")
+            self.session.mount(f"{self.base_url}/", MTCAdapter(certificate_name=None))
+            return self.session.get(url)
 
     def _perform_pre_login_calls(self) -> str:
         """
@@ -275,16 +314,7 @@ class MTCClient:
         try:
             current_epoch_ms = int(time.time() * 1000)
             module_version_url = f"{self.base_url}/MultiTankcard/moduleservices/moduleversioninfo?{current_epoch_ms}"
-            
-            # Note: verify=False was in original user code due to "Outsystem/MTC Sucks".
-            # This implies potential SSL certificate issues on the MTC server.
-            # For security, verify=True is preferred. If False is necessary, it's a known risk.
-            # Based on later success, verify=True might work for this call or it was changed to True.
-            # Let's assume verify=True is the goal, but acknowledge the original note.
-            # The provided code had verify=False for this specific call, then verify=True later.
-            # For consistency and security, let's try True here as well, if it breaks, it indicates server issue.
-            # Reverting to verify=False for this specific call as per context of it working before.
-            response = self.session.get(module_version_url, verify=False)
+            response = self._first_request(module_version_url)
             response.raise_for_status()
 
             self.visit_id = self.session.cookies.get("osVisit", "")
@@ -293,7 +323,7 @@ class MTCClient:
                 logger.error("Failed to obtain 'osVisit' or 'osVisitor' cookies during pre-login.")
                 raise ValueError("'osVisit'/'osVisitor' cookies are missing after moduleversioninfo call.")
 
-            logger.debug(f"Pre-login: osVisit='{self.visit_id}', osVisitor='{self.visitor_id}'")
+            logger.debug("Pre-login: osVisit and osVisitor cookies received.")
             
             module_version_data = response.json()
             module_version = module_version_data.get("versionToken")
@@ -317,7 +347,7 @@ class MTCClient:
             )
             app_store_response.raise_for_status()
             logger.debug("Pre-login: ActionGetAppStoreUrls call successful.")
-            logger.debug(f"Cookies after GetAppStoreUrls: {self.session.cookies.get_dict()}")
+            logger.debug(f"Cookies after GetAppStoreUrls: {sorted(self.session.cookies.keys())}")
             return module_version
 
         except requests.exceptions.RequestException as e:
@@ -388,7 +418,7 @@ class MTCClient:
             self.csrf_token = unquote(encoded_csrf_value)
             
             self.session.headers.update({"X-CSRFToken": self.csrf_token})
-            logger.info(f"New dynamic CSRF token configured for session: {self.csrf_token}")
+            logger.debug("New dynamic CSRF token configured for session.")
             
             return True
 
@@ -587,11 +617,19 @@ class MTCClient:
 
                 logger.info(f"Submitting claim with transaction date {date_transaction_for_api}")
                 logger.debug(f"Claim submission payload snippet: viewName='{claim_payload['viewName']}', DateTransaction='{date_transaction_for_api}'")
-                response = self.session.post(
-                    f"{self.base_url}/MultiTankcard/screenservices/OtmTrx_Transactions/Claim/ClaimForm/ActionClaim_Create",
-                    json=claim_payload,
-                    headers={"Referer": f"{self.base_url}/MultiTankcard/NewClaim"} # Critical: From successful HAR
-                )
+                try:
+                    response = self.session.post(
+                        f"{self.base_url}/MultiTankcard/screenservices/OtmTrx_Transactions/Claim/ClaimForm/ActionClaim_Create",
+                        json=claim_payload,
+                        headers={"Referer": f"{self.base_url}/MultiTankcard/NewClaim"} # Critical: From successful HAR
+                    )
+                except requests.exceptions.ReadTimeout:
+                    # The claim was sent but MTC did not answer: it may have been submitted, and
+                    # claims cannot be withdrawn, so never send it again in this run.
+                    msg = (f"{Colors.FAIL}Claim submission failed: MTC did not answer in time after the "
+                           f"claim for session {session_id} was sent, so it may have been submitted. "
+                           f"Check MTC before running again.{Colors.ENDC}")
+                    return False, msg
                 response.raise_for_status()
                 result = response.json()
 

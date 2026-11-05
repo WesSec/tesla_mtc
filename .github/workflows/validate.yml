@@ -67,6 +67,9 @@ jobs:
           done
           cat status.json
           python3 -c "import json; s = json.load(open('status.json')); assert s['allow_live'] is False and s['running'] is False, s"
+          # The image's health check is defined and passes
+          docker inspect --format '{{json .Config.Healthcheck}}' tesla_mtc:ci | grep -q healthcheck.py
+          docker exec tesla_mtc_ci python web/healthcheck.py
       - name: Container log
         if: always()
         run: docker logs tesla_mtc_ci || true

@@ -4,15 +4,38 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.1] - Unreleased
+
+### Security
+- MTC's certificate is verified again. Verification used to be switched off because MTC's
+  server presents its `*.mtc.nl` certificate under another host name. The certificate chain is
+  now checked against the trusted certificate authorities and the certificate must be valid
+  for `mtc.nl`; if MTC installs a certificate for its real host name, the normal check is used.
+  Your MTC password and IBAN are no longer sent over an unverified connection.
+- The MTC session token (CSRF token) and session cookie values are no longer written to the log.
+
+### Fixed
+- Every call to Tesla and MTC has a timeout (10 s to connect, 60 s to answer), so a server that
+  stops answering ends the run with an error instead of leaving it running forever. When MTC does
+  not answer after a claim was sent, that claim is never sent again in the same run (it may have
+  arrived); the session is reported as failed, and the next run's duplicate check finds it if it did.
+- The web interface stops a run that has not finished after `RUNNER_RUN_TIMEOUT` seconds
+  (default 900) and shows it as failed, so the page and Home Assistant never stay on *Running*.
 
 ### Added
+- Docker health check on the web interface (*healthy*/*unhealthy* in Docker and Synology
+  Container Manager) and image labels with source and license.
 - Automatic checks on every push and pull request: lint, unit tests with fictional data
-  (duplicate check, safety limits, the claim sent to MTC, Tesla session handling, and the
-  web interface's log reading and safety checks) and a Docker build with a smoke test.
-  Run them locally with `pip install -r requirements-dev.txt`, `ruff check .` and `pytest`.
+  (duplicate check, safety limits, the claim sent to MTC, Tesla session handling, certificate
+  checks and timeouts, and the web interface's log reading and safety checks) and a Docker build
+  with a smoke test. Run them locally with `pip install -r requirements-dev.txt`, `ruff check .`
+  and `pytest`.
 - Issue templates that remind you to remove tokens, passwords, IBAN and VIN from logs.
 - Monthly grouped dependency updates (Dependabot) and status badges in the README.
+
+### Changed
+- `tqdm` is pinned (4.70.1) like the other dependencies, so Dependabot can keep it up to date.
+- The startup warning about switched-off certificate verification is gone.
 
 ## [1.2.0] - 2026-10-14
 

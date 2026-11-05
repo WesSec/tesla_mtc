@@ -1,5 +1,10 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="tesla_mtc" \
+      org.opencontainers.image.description="Submit Tesla Supercharger sessions to MultiTankCard (MTC) for reimbursement" \
+      org.opencontainers.image.source="https://github.com/WesSec/tesla_mtc" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV PYTHONUNBUFFERED=1 \
     TZ=Europe/Amsterdam
 
@@ -18,5 +23,8 @@ RUN useradd --create-home --uid 1000 tesla_mtc
 USER tesla_mtc
 
 EXPOSE 8080
+# Shown as healthy/unhealthy in Docker and Synology Container Manager (checks the web interface)
+HEALTHCHECK --interval=60s --timeout=10s --start-period=20s --retries=3 \
+  CMD ["python", "web/healthcheck.py"]
 # Web interface by default; run once without it with: docker compose run --rm tesla_mtc python main.py
 CMD ["python", "-u", "web/runner.py"]

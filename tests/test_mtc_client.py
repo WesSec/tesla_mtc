@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import requests
 
 import MTC
 from conftest import FakeResponse, claim, days_ago, mtc_transaction, utc_days_ago
@@ -171,6 +172,30 @@ def test_other_mtc_error_is_not_retried(make_mtc_client, monkeypatch):
     assert not ok
     assert "Claim submission failed: Bijlage ontbreekt" in message
     assert len(client.session.payloads("/ActionClaim_Create")) == 1
+
+
+def test_no_answer_after_sending_a_claim_is_never_retried(make_mtc_client, monkeypatch):
+    """The claim may have arrived; sending it again could claim the session twice."""
+    monkeypatch.setenv("MODE", "LIVE")
+    client = make_mtc_client(submit_results=[requests.exceptions.ReadTimeout("no answer"), {"Success": True}])
+
+    ok, message = client.submit_reimbursement(claim(SESSION))
+
+    assert not ok
+    assert "may have been submitted" in message
+    assert len(client.session.payloads("/ActionClaim_Create")) == 1
+
+
+def test_connection_failure_before_sending_is_retried(make_mtc_client, monkeypatch):
+    monkeypatch.setenv("MODE", "LIVE")
+    client = make_mtc_client(submit_results=[requests.exceptions.ConnectTimeout("no connection"),
+                                             {"Success": True}])
+
+    ok, message = client.submit_reimbursement(claim(SESSION))
+
+    assert ok
+    assert "Successfully submitted claim" in message
+    assert len(client.session.payloads("/ActionClaim_Create")) == 2
 
 
 def test_mtc_api_exception_stops_before_submitting(make_mtc_client, monkeypatch):

@@ -104,7 +104,10 @@ class FakeMTCSession:
         if url.endswith("/DataActionGetTransactions"):
             return FakeResponse({"data": {"Transactions": {"List": self.transactions}}})
         if url.endswith("/ActionClaim_Create"):
-            return FakeResponse({"data": self.submit_results.pop(0)})
+            result = self.submit_results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return FakeResponse({"data": result})
         raise AssertionError(f"Unexpected MTC call: {url}")
 
     def payloads(self, endpoint):
