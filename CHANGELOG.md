@@ -10,6 +10,12 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - A workflow that publishes a ready-made Docker image to `ghcr.io/wessec/tesla_mtc` for amd64 and
   arm64 (for example a Raspberry Pi or an ARM-based NAS) with every release, after a smoke test.
 
+### Changed
+- `docker-compose.example.yml` and the setup guide use the ready-made image: a new setup needs only
+  `.env`, `skip.txt` and the compose file, and updating is `docker compose pull && docker compose up -d`.
+  Building the image yourself still works with `build: .`; see "Updating" in `docs/web-runner.md`
+  to switch an existing setup.
+
 ## [1.2.1] - 2026-11-05
 
 ### Security

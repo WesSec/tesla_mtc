@@ -53,16 +53,17 @@ Prefer tapping a button over running a script? The web interface runs tesla_mtc 
 - English and Dutch, light and dark mode;
 - submitting stays switched off until you enable it.
 
-Quick start with Docker Compose:
+Quick start with Docker Compose, using the ready-made image `ghcr.io/wessec/tesla_mtc` (amd64 and arm64), so you don't need the source code:
 
 ```bash
-cp .env.example .env              # then fill it in
+mkdir tesla_mtc && cd tesla_mtc
+curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/WesSec/tesla_mtc/main/docker-compose.example.yml
+curl -fsSLo .env https://raw.githubusercontent.com/WesSec/tesla_mtc/main/.env.example   # then fill it in
 touch skip.txt
-cp docker-compose.example.yml docker-compose.yml
-docker compose up -d --build      # open http://<your-server>:8080
+docker compose up -d              # open http://<your-server>:8080
 ```
 
-See **[docs/web-runner.md](docs/web-runner.md)** for the full setup (including Synology Container Manager), a first-use walkthrough with screenshots, and Home Assistant examples.
+See **[docs/web-runner.md](docs/web-runner.md)** for the full setup (including Synology Container Manager), updating, a first-use walkthrough with screenshots, and Home Assistant examples.
 
 <br clear="right">
 
