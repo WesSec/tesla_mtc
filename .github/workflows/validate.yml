@@ -1,0 +1,72 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 is the Docker image, 3.14 the newest release
+        python: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check --output-format=github .
+      - name: Tests
+        run: pytest
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build (not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: tesla_mtc:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: |
+          set -eu
+          # Runs as the unprivileged user, with the invoice converter and all imports in place
+          test "$(docker run --rm tesla_mtc:ci id -u)" = "1000"
+          docker run --rm tesla_mtc:ci sh -c "command -v pdftoppm"
+          docker run --rm tesla_mtc:ci python -c "import main, MTC"
+          # The web interface starts without any configuration, with submitting switched off
+          docker run -d --name tesla_mtc_ci -p 8080:8080 tesla_mtc:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/status > status.json 2>/dev/null && break
+            sleep 1
+          done
+          cat status.json
+          python3 -c "import json; s = json.load(open('status.json')); assert s['allow_live'] is False and s['running'] is False, s"
+      - name: Container log
+        if: always()
+        run: docker logs tesla_mtc_ci || true

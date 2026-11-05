@@ -6,6 +6,12 @@ logs/
 .git/
 .github/
 docs/
+tests/
+.venv/
+.pytest_cache/
+.ruff_cache/
+requirements-dev.txt
+pyproject.toml
 __pycache__/
 *.pyc
 docker-compose*.yml

@@ -1,0 +1,14 @@
+# Tool settings only; tesla_mtc is not installed as a package.
+
+[tool.ruff]
+line-length = 120
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+# Real bugs only (syntax errors, undefined or unused names, likely mistakes), no style rules
+select = ["E9", "F", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "web"]
+addopts = "-ra"

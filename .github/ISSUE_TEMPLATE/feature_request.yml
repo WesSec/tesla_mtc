@@ -1,0 +1,16 @@
+name: Feature request
+description: An idea or a country, currency or setup that is not supported yet
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: For a new country, mention the country and the currency on the Tesla invoice.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
