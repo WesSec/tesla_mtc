@@ -6,7 +6,11 @@ import http.client
 import io
 import json
 import logging
+import os
+import socket
+import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
@@ -14,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 from tqdm import tqdm
 
+import healthcheck
 import main
 import runner
 from conftest import mtc_transaction, tesla_history, tesla_session, utc_days_ago
@@ -268,3 +273,86 @@ def test_page_cannot_be_framed(server):
     assert headers["X-Frame-Options"] == "DENY"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "Proefrun".encode() in body
+
+
+# --- Runs: the command, and the time limit ---------------------------------------------
+
+@pytest.fixture
+def fresh_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, "state", {"running": False, "mode": None, "sessions": None, "started": None,
+                                          "finished": None, "exit_code": None, "log": []})
+    monkeypatch.setattr(runner, "APP_DIR", str(tmp_path))
+    return runner
+
+
+def test_run_passes_mode_and_sessions(fresh_state, monkeypatch):
+    script = "import os; print(os.environ['MODE'], os.environ['MAX_SESSIONS'], flush=True)"
+    monkeypatch.setattr(runner, "RUN_CMD", [sys.executable, "-c", script])
+
+    runner.run_script("DRY", 3)
+
+    assert runner.state["exit_code"] == 0
+    assert runner.state["log"] == ["DRY 3"]
+    assert runner.state["running"] is False
+
+
+def test_run_that_hangs_is_stopped(fresh_state, monkeypatch):
+    script = "import time; print('started', flush=True); time.sleep(60)"
+    monkeypatch.setattr(runner, "RUN_CMD", [sys.executable, "-c", script])
+    monkeypatch.setattr(runner, "RUN_TIMEOUT", 1)
+
+    started = time.monotonic()
+    runner.run_script("DRY", 1)
+
+    assert time.monotonic() - started < 30
+    snap = dict(runner.state)
+    assert snap["running"] is False
+    assert snap["exit_code"] != 0
+    assert "Run stopped: not finished after 1 seconds" in snap["log"][-1]
+    parsed = runner.parse_log(snap["log"])
+    assert runner.summary(snap, parsed)["ok"] is False
+    assert any("Run stopped" in message for _, message in parsed["notes"])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process groups are POSIX-only")
+def test_hanging_run_behind_a_wrapper_script_is_stopped(fresh_state, monkeypatch):
+    """Like an entrypoint.sh that pipes main.py into tee: the whole group must be stopped,
+    otherwise the pipe stays open and the run never ends."""
+    child = f"{sys.executable} -c \"import time; print('started', flush=True); time.sleep(60)\""
+    monkeypatch.setattr(runner, "RUN_CMD", ["sh", "-c", f"{child} | cat"])
+    monkeypatch.setattr(runner, "RUN_TIMEOUT", 1)
+
+    started = time.monotonic()
+    runner.run_script("DRY", 1)
+
+    assert time.monotonic() - started < 30
+    assert runner.state["exit_code"] != 0
+    assert "Run stopped" in runner.state["log"][-1]
+
+
+@pytest.mark.parametrize("value, expected", [(None, 900), ("120", 120), ("0", 0), ("-5", 0), ("soon", 900)])
+def test_run_timeout_setting(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("RUNNER_RUN_TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("RUNNER_RUN_TIMEOUT", value)
+
+    assert runner.run_timeout() == expected
+
+
+# --- Docker HEALTHCHECK ---------------------------------------------------------------
+
+def test_healthcheck(server, monkeypatch):
+    assert healthcheck.healthy(port=server.port, token="")
+
+    monkeypatch.setattr(runner, "TOKEN", "test-token")
+    assert healthcheck.healthy(port=server.port, token="test-token")
+    assert not healthcheck.healthy(port=server.port, token="")
+
+
+def test_healthcheck_without_web_interface():
+    with socket.socket() as sock:  # a port nobody listens on
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    assert not healthcheck.healthy(port=port, token="", timeout=2)

@@ -7,15 +7,9 @@ from pdf2image import convert_from_bytes
 import logging
 import time
 from MTC import MTCClient
-from util import Colors
+from util import Colors, HTTP_TIMEOUT
 from version import __version__
-import urllib3
-from urllib3.exceptions import InsecureRequestWarning
 from tqdm import tqdm
-
-
-# Suppress only the single warning from urllib3 about insecure requests
-urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # MTC country mapping
@@ -167,7 +161,8 @@ class TeslaAuth:
             
             response = requests.post(
                 f"{self.auth_url}/token",
-                data=data
+                data=data,
+                timeout=HTTP_TIMEOUT
             )
             response.raise_for_status()
             
@@ -247,7 +242,8 @@ class TeslaChargingAPI:
                 f"{self.base_url}/graphql",
                 headers=self.get_headers(),
                 params=params,
-                json=payload
+                json=payload,
+                timeout=HTTP_TIMEOUT
             )
             
             if response.status_code != 200:
@@ -272,7 +268,8 @@ class TeslaChargingAPI:
             response = requests.get(
                 f"{self.invoice_url}/{invoice_id}",
                 headers=self.get_headers(),
-                params=params
+                params=params,
+                timeout=HTTP_TIMEOUT
             )
             response.raise_for_status()
             return response.content
@@ -456,7 +453,6 @@ def main():
     )
     
     try:
-        logging.warning(f"{Colors.WARNING}SSL certificate verification is disabled for MTC API requests due to a certificate issue on their end. This is insecure and should be fixed if MTC updates their infrastructure.{Colors.ENDC}")
         logging.info(f"Starting Tesla charging session processing (tesla_mtc {__version__})")
         api = TeslaChargingAPI()
         sessions = api.process_charging_sessions()

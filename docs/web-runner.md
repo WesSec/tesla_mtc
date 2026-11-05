@@ -186,6 +186,9 @@ Web interface settings, set under `environment:` in `docker-compose.yml`:
 | `TZ` / `RUNNER_TZ` | `Europe/Amsterdam` | Time zone for times on the page. |
 | `RUNNER_CMD` | `python -u main.py` | Command for a run. Only change this to wrap tesla_mtc in your own script. |
 | `RUNNER_APP_DIR` | the repository folder | Folder `RUNNER_CMD` runs in. |
+| `RUNNER_RUN_TIMEOUT` | `900` | Seconds after which a run that has not finished is stopped and shown as failed, so the page and Home Assistant never stay on *Running*. `0` disables the limit. |
+
+The Docker image has a health check on the web interface, so Docker and Synology Container Manager show the container as *healthy* or *unhealthy*. It also works with a `RUNNER_TOKEN`.
 
 tesla_mtc's own settings in `.env` keep working. The most relevant ones here:
 

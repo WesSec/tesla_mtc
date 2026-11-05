@@ -14,3 +14,7 @@ class AnsiColors:
 
 # Create instances for easier access
 Colors = AnsiColors()
+
+# (connect, read) timeout in seconds for every call to Tesla and MTC, so a server that
+# stops answering ends the run with an error instead of leaving it running forever
+HTTP_TIMEOUT = (10, 60)
